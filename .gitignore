@@ -1,0 +1,31 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode — user-specific state
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+
+# Build output and caches
+build/
+DerivedData/
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.profraw
+*.profdata
+
+# Swift Package Manager
+.swiftpm/
+.build/
+
+# Local packaging artifacts
+release/
+*.dmg
+
+# Local agent working instructions
+/AGENTS.md

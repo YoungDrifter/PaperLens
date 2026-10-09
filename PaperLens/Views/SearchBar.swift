@@ -1,0 +1,121 @@
+//
+//  SearchBar.swift
+//  PaperLens
+//
+//  Floating search bar with result navigation
+//
+
+import SwiftUI
+
+struct SearchBar: View {
+    @Bindable var searchManager: SearchManager
+    var pdfManager: PDFManager
+    @Binding var isVisible: Bool
+    let focusRequest: Int
+    @FocusState private var isSearchFieldFocused: Bool
+
+    var body: some View {
+        HStack(spacing: DesignTokens.spacingSM) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            TextField("Search", text: $searchManager.searchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .frame(width: DesignTokens.searchBarWidth)
+                .focused($isSearchFieldFocused)
+                .onSubmit {
+                    handleSearchSubmit()
+                }
+                .onChange(of: searchManager.searchQuery) { _, newValue in
+                    if newValue.isEmpty {
+                        searchManager.clearSearch()
+                    } else {
+                        performSearch()
+                    }
+                }
+
+            if searchManager.hasResults {
+                Text("\(searchManager.currentResultNumber) of \(searchManager.totalResults)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(minWidth: 60)
+
+                Divider().frame(height: 16)
+
+                Button {
+                    pdfManager.pushNavigationState()
+                    searchManager.previousResult()
+                } label: {
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .disabled(!searchManager.hasResults)
+
+                Button {
+                    pdfManager.pushNavigationState()
+                    searchManager.nextResult()
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .disabled(!searchManager.hasResults)
+            } else if !searchManager.searchQuery.isEmpty && !searchManager.hasResults {
+                Text("No results")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+
+            Divider().frame(height: 16)
+
+            Button {
+                closeSearch()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.cancelAction)
+        }
+        .padding(.horizontal, DesignTokens.spacingSM)
+        .padding(.vertical, DesignTokens.spacingXS)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .onAppear {
+            focusSearchField()
+        }
+        .onChange(of: focusRequest) { _, _ in
+            focusSearchField()
+        }
+    }
+
+    private func handleSearchSubmit() {
+        if searchManager.hasResults {
+            pdfManager.pushNavigationState()
+            searchManager.nextResult()
+        } else {
+            performSearch()
+        }
+    }
+
+    private func performSearch() {
+        guard let document = pdfManager.document else { return }
+        searchManager.search(searchManager.searchQuery, in: document)
+    }
+
+    private func closeSearch() {
+        searchManager.clearSearch()
+        isVisible = false
+    }
+
+    private func focusSearchField() {
+        DispatchQueue.main.async {
+            isSearchFieldFocused = true
+        }
+    }
+}
