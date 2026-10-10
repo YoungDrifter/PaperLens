@@ -18,7 +18,7 @@ struct SettingsView: View {
     init(initialSection: Section = .annotations) { _selection = State(initialValue: initialSection) }
 
     var body: some View {
-        SettingsLayout(appName: AppIdentity.displayName, version: AppIdentity.version, icon: AppIdentity.icon,
+        SettingsLayout(appName: AppIdentity.displayName, version: AppIdentity.versionLabel, icon: AppIdentity.icon,
                        categories: Section.allCases.map { SettingsCategory(id: $0, title: $0.rawValue, symbol: $0.symbol) },
                        selection: $selection) {
             switch selection {

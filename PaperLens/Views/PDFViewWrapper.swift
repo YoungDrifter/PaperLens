@@ -153,6 +153,18 @@ struct PDFViewWrapper: NSViewRepresentable {
         // Lets persistence read the live scroll position (page + point) on demand.
         pdfManager.liveDestinationProvider = { [weak pdfView] in pdfView?.currentDestination }
         pdfManager.liveDestinationProviderOwner = ObjectIdentifier(context.coordinator)
+        pdfView.onReadingViewportChange = { [weak pdfView, weak coordinator = context.coordinator] in
+            guard let pdfView, let coordinator, coordinator.isActive,
+                  coordinator.pdfManager.liveDestinationProviderOwner == ObjectIdentifier(coordinator),
+                  pdfView.document === coordinator.pdfManager.document else { return }
+            let id = pdfView.activeOutlineItemID(in: coordinator.pdfManager.outlineItems())
+            coordinator.ingestOrDefer { [weak coordinator, weak pdfView] in
+                guard let coordinator, let pdfView, coordinator.isActive,
+                      coordinator.pdfManager.liveDestinationProviderOwner == ObjectIdentifier(coordinator),
+                      pdfView.document === coordinator.pdfManager.document else { return }
+                coordinator.pdfManager.ingestOutlineSection(id)
+            }
+        }
 
         pdfView.onHighlightSelection = { [weak annotationManager] in
             annotationManager?.applySelectionMarkup()
@@ -322,6 +334,7 @@ struct PDFViewWrapper: NSViewRepresentable {
         pdfView.onControlScroll = nil
         pdfView.onLinkNavigation = nil
         pdfView.onToggleBookmark = nil
+        pdfView.onReadingViewportChange = nil
 
         // The live view is gone; persistence must fall back to manager state.
         // Guarded by owner: after a cross-window tab move the destination's
@@ -429,6 +442,7 @@ struct PDFViewWrapper: NSViewRepresentable {
             guard lastAppliedActive != active else { return }
             lastAppliedActive = active
             if active {
+                pdfView.scheduleReadingViewportUpdate()
                 setupScrollMonitor(for: pdfView)
                 pdfView.setupRightClickMonitor()
                 // Deterministic keyboard routing on tab switch: without this,
@@ -480,7 +494,10 @@ struct PDFViewWrapper: NSViewRepresentable {
         /// single sizing owner — Auto-Scale *or* an explicit scale/fit, never both.
         func project(_ pdfView: StablePDFView, documentDidChange: Bool) {
             isProjecting = true
-            defer { isProjecting = false }
+            defer {
+                isProjecting = false
+                pdfView.scheduleReadingViewportUpdate()
+            }
 
             applyDisplayMode(pdfManager.displayMode, to: pdfView)
 
@@ -543,7 +560,7 @@ struct PDFViewWrapper: NSViewRepresentable {
 
         /// Runs `work` now when safe, or on the next runloop turn if a projector
         /// write is in flight (so we never mutate @Observable state mid view-update).
-        private func ingestOrDefer(_ work: @escaping () -> Void) {
+        fileprivate func ingestOrDefer(_ work: @escaping () -> Void) {
             if isProjecting {
                 DispatchQueue.main.async(execute: work)
             } else {
@@ -661,6 +678,7 @@ struct PDFViewWrapper: NSViewRepresentable {
         }
 
         @objc func pageChanged(_ notification: Notification) {
+            (notification.object as? StablePDFView)?.scheduleReadingViewportUpdate()
             guard let pdfView = notification.object as? PDFView,
                   let currentPage = pdfView.currentPage,
                   let document = pdfView.document else {
@@ -674,6 +692,7 @@ struct PDFViewWrapper: NSViewRepresentable {
         }
 
         @objc func scaleChanged(_ notification: Notification) {
+            (notification.object as? StablePDFView)?.scheduleReadingViewportUpdate()
             guard let pdfView = notification.object as? PDFView else { return }
             let viewScale = pdfView.scaleFactor
             // Ignore the echo of our own projector write.
@@ -684,6 +703,7 @@ struct PDFViewWrapper: NSViewRepresentable {
         }
 
         @objc func displayModeChanged(_ notification: Notification) {
+            (notification.object as? StablePDFView)?.scheduleReadingViewportUpdate()
             guard let pdfView = notification.object as? StablePDFView else { return }
             let viewMode = pdfView.displayMode
             // Ignore the echo of our own projector write (view already matches intent).

@@ -6,9 +6,9 @@
 
 一个简洁的原生 macOS PDF 阅读器，支持多标签阅读、高亮、评论和书签，让文档与阅读时的想法保持在一起。
 
-**Version 1.0.0** · macOS 15+ · Apple Silicon
+**Version 1.0.1** · macOS 15+ · Apple Silicon
 
-[下载 1.0.0](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.0)
+[下载 1.0.1](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.1)
 
 ![PaperLens 01 · 启动页](docs/versions/1.0.0/images/welcome.png)
 
@@ -32,7 +32,7 @@
 
 ## 安装
 
-从 [Releases](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.0) 下载 `PaperLens-1.0.0.dmg`，打开后将 **PaperLens.app** 拖入 **Applications**。`SHA256SUMS.txt` 提供安装包校验值。
+从 [Releases](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.1) 下载 `PaperLens-1.0.1.dmg`，打开后将 **PaperLens.app** 拖入 **Applications**。`SHA256SUMS.txt` 提供安装包校验值。
 
 当前版本使用 ad-hoc 签名，尚未经过 Apple 公证。
 
@@ -43,6 +43,12 @@
 首次发布，支持多标签 PDF 阅读、导航与搜索、持续标注模式、页面批注、文件管理和可撤销的页面编辑。
 
 [版本介绍与演示](docs/versions/1.0.0/README.md) · [下载 1.0.0](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.0)
+
+### 1.0.1 · 大纲与缩略图修复
+
+修复多行大纲标题和页码裁切、章节行重叠及悬停背景残留，增强当前章节高亮并随页内阅读位置切换；大纲默认折叠，点击可准确跳转。缩略图增加清晰边框，当前页标识更明显；About 与更新提示显示构建号。工具栏可切换阅读模式，非连续模式在 PDF 右上角提供翻页按钮。
+
+[更新说明](docs/versions/1.0.1/README.md) · [下载 1.0.1](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.1)
 
 ## 本地构建
 

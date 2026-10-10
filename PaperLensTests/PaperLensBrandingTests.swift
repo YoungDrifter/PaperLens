@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import Testing
+import Sparkle
 @testable import PaperLens
 
 @MainActor
@@ -8,7 +9,7 @@ struct PaperLensBrandingTests {
     @Test func publicIdentityUsesNewVersionAndBundledIcon() throws {
         #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String == "PaperLens")
         #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == AppIdentity.displayName)
-        #expect(AppIdentity.version == "1.0.0")
+        #expect(AppIdentity.version == "1.0.1")
         #expect(Bundle.main.bundleIdentifier == "com.raccoontechnologies.PaperLens")
         let url = try #require(Bundle.main.url(forResource: "AppIcon", withExtension: "icns"))
         #expect(NSImage(contentsOf: url)?.isValid == true)
@@ -17,6 +18,30 @@ struct PaperLensBrandingTests {
         let masterData = try Data(contentsOf: masterURL)
         let bitmap = try #require(NSBitmapImageRep(data: masterData))
         #expect(bitmap.pixelsWide == 1024)
+    }
+
+    @Test func versionDisplayDistinguishesSameMarketingVersionBuilds() throws {
+        let update = try #require(SUAppcastItem(dictionary: [
+            "title": "1.0.1", "sparkle:version": "8", "sparkle:shortVersionString": "1.0.1",
+            "enclosure": ["url": "https://example.com/PaperLens.dmg", "length": "100", "type": "application/octet-stream"]
+        ]))
+        let formatter: any SUVersionDisplay = UpdateVersionDisplayer()
+        var current: NSString = "1.0.1"
+        let latest = formatter.formatUpdateVersion(fromUpdate: update, andBundleDisplayVersion: &current, withBundleVersion: "6")
+        #expect(latest == "1.0.1 (Build 8)")
+        #expect(current as String == "1.0.1 (Build 6)")
+        #expect(formatter.formatBundleDisplayVersion?("1.0.1", withBundleVersion: "8", matchingUpdate: update) == "1.0.1 (Build 8)")
+        #expect(AppIdentity.versionLabel.contains("Build 12"))
+    }
+
+    @Test func verifiedVersionCacheRestoresBuildAndMigratesVersionOnlyCache() throws {
+        let suite = "UpdateVersionDisplay.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set("1.0.1", forKey: "updates.latestVerifiedVersion")
+        #expect(AppUpdater(defaults: defaults).latestVersionLabel == "1.0.1")
+        defaults.set("8", forKey: "updates.latestVerifiedBuild")
+        #expect(AppUpdater(defaults: defaults).latestVersionLabel == "1.0.1 (Build 8)")
     }
 
     @Test func settingsShowAnnotationsAtDefaultSizeAndKeepNativeWindowControls() async throws {

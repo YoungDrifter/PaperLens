@@ -23,20 +23,33 @@ struct DocumentToolbar: View {
     }
 
     static func controlLevel(availableWidth: CGFloat) -> Int {
-        if availableWidth >= 260 { return 2 }
-        if availableWidth >= 219 { return 1 }
+        if availableWidth >= 337 { return 2 }
+        if availableWidth >= 295 { return 1 }
         return 0
     }
 
     private func controls(level: Int) -> some View {
         HStack(spacing: 4) {
-            toolbarButton(icon: "minus.magnifyingglass", help: "Zoom Out", action: { pdfManager.zoomOut() }, disabled: !pdfManager.hasDocument)
-            toolbarButton(icon: "plus.magnifyingglass", help: "Zoom In", action: { pdfManager.zoomIn() }, disabled: !pdfManager.hasDocument)
             if level >= 1 {
-                toolbarButton(icon: "arrow.down.forward.and.arrow.up.backward", help: "Fit Page", action: { pdfManager.requestFitOnce(mode: .page) }, disabled: !pdfManager.hasDocument)
-                if level >= 2 { toolbarButton(icon: "arrow.left.and.right", help: "Fit Width", action: { pdfManager.requestFitOnce(mode: .width) }, disabled: !pdfManager.hasDocument) }
-                Divider().frame(height: 20)
+                toolbarButton(icon: "minus.magnifyingglass", help: "Zoom Out", action: { pdfManager.zoomOut() }, disabled: !pdfManager.hasDocument)
+                toolbarButton(icon: "plus.magnifyingglass", help: "Zoom In", action: { pdfManager.zoomIn() }, disabled: !pdfManager.hasDocument)
             }
+            if level >= 2 {
+                toolbarButton(icon: "arrow.down.forward.and.arrow.up.backward", help: "Fit Page", action: { pdfManager.requestFitOnce(mode: .page) }, disabled: !pdfManager.hasDocument)
+            }
+            toolbarButton(icon: "arrow.left.and.right", help: "Fit Width", action: { pdfManager.requestFitOnce(mode: .width) }, disabled: !pdfManager.hasDocument)
+            if level >= 1 { Divider().frame(height: 20) }
+            Menu { PageDisplayModeMenuItems(pdfManager: pdfManager) } label: {
+                Image(systemName: "book")
+                    .font(.system(size: DesignTokens.chromeIconSize))
+                    .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
+            .modifier(ChromeMenuHoverFeedback())
+            .help("Reading Mode").accessibilityLabel("Reading Mode")
+            .accessibilityValue(pdfManager.displayMode.menuTitle)
+            .disabled(!pdfManager.hasDocument)
             annotationTool(icon: "highlighter", title: "Highlight", mode: .highlight)
                 .contextMenu { highlightColors }
             annotationTool(icon: "text.bubble", title: "Add Comment", mode: .comment)
@@ -68,6 +81,8 @@ struct DocumentToolbar: View {
                 }.disabled(!pdfManager.hasDocument)
             } label: { Image(systemName: "ellipsis.circle").font(.system(size: DesignTokens.chromeIconSize)).frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize) }
             .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More")
+            .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
+            .modifier(ChromeMenuHoverFeedback())
         }
     }
 

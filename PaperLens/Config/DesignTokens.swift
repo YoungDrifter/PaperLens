@@ -21,6 +21,7 @@ struct DesignTokens {
     static let sidebarBottom = Color.white
     static let chromeButtonSize: CGFloat = 38
     static let chromeIconSize: CGFloat = 19
+    static let chromeHoverOpacity: Double = 0.05
 
     // MARK: - Annotation Colors
 
@@ -60,7 +61,16 @@ struct DesignTokens {
     static let thumbnailRenderHeight: CGFloat = 340
     static let thumbnailGridPadding: CGFloat = 12
     static let thumbnailCornerRadius: CGFloat = 4
-    static let thumbnailBorderWidth: CGFloat = 2
+    static let thumbnailBorderWidth: CGFloat = 1
+    static let thumbnailSelectedBorderWidth: CGFloat = 2
+    static let thumbnailBorder = Color(white: 0.65)
+    static let thumbnailSelectedBorder = Color(white: 0.3)
+    static let outlineSelection = NSColor(white: 0.86, alpha: 1)
+    static let outlineHover = NSColor(white: 0.95, alpha: 1)
+    static let outlineRowInset: CGFloat = 8
+    static let outlineRowCornerRadius: CGFloat = 7
+    static let outlinePageTrailingInset: CGFloat = 20
+    static let outlineReadingInset: CGFloat = 24
     static let thumbnailBadgeFontSize: CGFloat = 12
 
     // MARK: - Settings Window

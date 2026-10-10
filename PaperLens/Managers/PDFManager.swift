@@ -54,6 +54,12 @@ final class PDFManager {
     var document: PDFDocument?
     var currentPage: PDFPage?
     var currentPageIndex: Int = 0
+    /// Derived from the live viewport; independent of PDFKit's current-page heuristic.
+    var activeOutlineItemID: String?
+
+    func ingestOutlineSection(_ id: String?) {
+        if activeOutlineItemID != id { activeOutlineItemID = id }
+    }
     var scaleFactor: CGFloat = 1.0
     var isAutoScaling: Bool = false
     /// One-shot fit request consumed by the projector; nil when no fit is pending.
@@ -187,6 +193,7 @@ final class PDFManager {
     }
 
     private func invalidateOutlineCache() {
+        activeOutlineItemID = nil
         cachedOutlineRoot = nil
         cachedOutlineItems = nil
     }
@@ -443,19 +450,23 @@ final class PDFManager {
         currentPage = page
     }
 
-    var canGoToPreviousPage: Bool { hasDocument && currentPageIndex > 0 }
-    var canGoToNextPage: Bool { hasDocument && currentPageIndex + 1 < pageCount }
+    private var previousPageButtonIndex: Int {
+        displayMode == .twoUp ? max(0, (currentPageIndex / 2 - 1) * 2) : currentPageIndex - 1
+    }
+    private var nextPageButtonIndex: Int {
+        displayMode == .twoUp ? (currentPageIndex / 2 + 1) * 2 : currentPageIndex + 1
+    }
+    var canGoToPreviousPage: Bool { hasDocument && (displayMode == .twoUp ? currentPageIndex / 2 > 0 : currentPageIndex > 0) }
+    var canGoToNextPage: Bool { hasDocument && nextPageButtonIndex < pageCount }
 
     func nextPage() {
-        let nextIndex = currentPageIndex + 1
-        guard nextIndex < pageCount else { return }
-        goToPage(nextIndex)
+        guard canGoToNextPage else { return }
+        goToPage(nextPageButtonIndex)
     }
 
     func previousPage() {
-        let previousIndex = currentPageIndex - 1
-        guard previousIndex >= 0 else { return }
-        goToPage(previousIndex)
+        guard canGoToPreviousPage else { return }
+        goToPage(previousPageButtonIndex)
     }
 
     func goToFirstPage() {

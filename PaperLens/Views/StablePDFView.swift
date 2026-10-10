@@ -22,6 +22,36 @@ final class StablePDFView: PDFView {
     private weak var cachedDocumentScrollView: NSScrollView?
     private weak var configuredScrollView: NSScrollView?
 
+    /// Coalesced viewport signal. The coordinator derives only a section ID from it.
+    var onReadingViewportChange: (() -> Void)?
+    private var readingViewportUpdateQueued = false
+
+    func scheduleReadingViewportUpdate() {
+        guard onReadingViewportChange != nil, !readingViewportUpdateQueued else { return }
+        readingViewportUpdateQueued = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.readingViewportUpdateQueued = false
+            self.onReadingViewportChange?()
+        }
+    }
+
+    func activeOutlineItemID(in items: [OutlineItem]) -> String? {
+        guard let document, !bounds.isEmpty else { return nil }
+        let inset = min(DesignTokens.outlineReadingInset, bounds.height / 2)
+        let anchor = CGPoint(x: bounds.midX, y: isFlipped ? bounds.minY + inset : bounds.maxY - inset)
+        guard let readingPage = page(for: anchor, nearest: true) else { return nil }
+        let pageIndex = document.index(for: readingPage)
+        guard pageIndex != NSNotFound else { return nil }
+        let readingOffset = isFlipped ? anchor.y : -anchor.y
+        return OutlineItem.activeItemID(in: items, pageIndex: pageIndex, readingOffset: readingOffset) { item in
+            guard let destination = item.destination, let page = destination.page,
+                  page.document === document else { return nil }
+            let point = convert(destination.point, from: page)
+            return self.isFlipped ? point.y : -point.y
+        }
+    }
+
     weak var pageCommentManager: CommentManager?
     var commentMarkers: [UUID: CommentMarker] = [:]
     var pageCommentCard: PageCommentCard?
@@ -70,6 +100,7 @@ final class StablePDFView: PDFView {
     override func layout() {
         super.layout()
         syncCommentOverlays()
+        scheduleReadingViewportUpdate()
 
         if let scrollView = documentScrollView {
             if configuredScrollView !== scrollView {
@@ -225,6 +256,7 @@ final class StablePDFView: PDFView {
     }
 
     @objc private func handleScrollChanged(_ notification: Notification) {
+        scheduleReadingViewportUpdate()
         guard let scrollView = documentScrollView else { return }
         // Enforce visibility state during scroll to prevent system override
         // We use animator() proxy to match the active animation state if any,

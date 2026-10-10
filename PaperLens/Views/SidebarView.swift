@@ -39,8 +39,12 @@ struct SidebarView: View {
                     Text("No Outline Available").foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
                 } else {
-                    NativeOutlineView(items: items, pageIndex: pdfManager.currentPageIndex,
-                                      onSelect: { index in pdfManager.pushNavigationState(); pdfManager.goToPage(index) })
+                    NativeOutlineView(items: items, activeItemID: pdfManager.activeOutlineItemID,
+                                      onSelect: { destination in
+                                          let samePage = destination.page === pdfManager.currentPage
+                                          if samePage { pdfManager.pushNavigationState() }
+                                          pdfManager.goToDestination(destination)
+                                      })
                 }
             case .thumbnails:
                 ThumbnailGridView(pdfManager: pdfManager, bookmarkManager: bookmarkManager)

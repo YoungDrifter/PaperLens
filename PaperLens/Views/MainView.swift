@@ -142,6 +142,23 @@ struct MainView: View {
                 emptyState
             }
         }
+        .overlay(alignment: .topTrailing) {
+            if isActive && pdfManager.hasDocument && pdfManager.displayMode.showsPageNavigationButtons {
+                HStack(spacing: DesignTokens.spacingXS) {
+                    ChromeButton("chevron.left", help: "Previous Page", glass: false) {
+                        pdfManager.previousPage()
+                    }
+                    .disabled(!pdfManager.canGoToPreviousPage)
+                    ChromeButton("chevron.right", help: "Next Page", glass: false) {
+                        pdfManager.nextPage()
+                    }
+                    .disabled(!pdfManager.canGoToNextPage)
+                }
+                .padding(.horizontal, DesignTokens.spacingXS)
+                .paperLensGlassCapsule()
+                .padding(DesignTokens.spacingMD)
+            }
+        }
         .overlay(alignment: .bottom) { searchOverlay }
         .overlay { dragHoverOverlay }
     }

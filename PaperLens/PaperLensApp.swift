@@ -89,7 +89,7 @@ struct PaperLensApp: App {
                 Button("About \(AppIdentity.displayName)") {
                     NSApp.orderFrontStandardAboutPanel(options: [
                         .applicationName: AppIdentity.displayName, .applicationIcon: AppIdentity.icon,
-                        .applicationVersion: AppIdentity.version, .version: ""])
+                        .applicationVersion: AppIdentity.versionLabel, .version: ""])
                 }
                 Divider()
                 appMenuContent

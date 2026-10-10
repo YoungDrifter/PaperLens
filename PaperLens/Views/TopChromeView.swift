@@ -99,7 +99,7 @@ struct TopChromeView: View {
                     if let runtime = tabManager.activeRuntime {
                         DocumentToolbar(pdfManager: runtime.pdfManager, annotationManager: runtime.annotationManager,
                                         commentManager: runtime.commentManager, bookmarkManager: runtime.bookmarkManager)
-                            .frame(width: 400).padding(12).preferredColorScheme(.light)
+                            .fixedSize().padding(12).preferredColorScheme(.light)
                     }
                 }
                 pageControl(windowWidth: geometry.size.width)
@@ -137,8 +137,8 @@ struct TopChromeView: View {
     }
     static func expandedToolsWidth(windowWidth: CGFloat) -> CGFloat {
         // Preserve room for tabs and fixed controls; additional tools extend left.
-        // Zoom, highlight and comment remain visible whenever tools are inline.
-        min(300, max(0, windowWidth - 594 - pageControlWidth(windowWidth: windowWidth)))
+        // Allow the complete toolbar to fit; Fit Width stays in compact layouts.
+        min(337, max(0, windowWidth - 594 - pageControlWidth(windowWidth: windowWidth)))
     }
 
 }
@@ -168,10 +168,70 @@ struct ChromeButton: View {
         Image(systemName: icon).foregroundStyle(Color.black).font(.system(size: DesignTokens.chromeIconSize))
             .offset(y: iconOffsetY)
             .frame(width: size, height: size)
-            .background(Capsule().fill(Color.black.opacity(selected ? 0.12 : (hovering ? 0.05 : 0))))
+            .background(Capsule().fill(Color.black.opacity(selected ? 0.12 : (hovering ? DesignTokens.chromeHoverOpacity : 0))))
             .contentShape(Capsule())
     }
 
+}
+
+/// Native borderless menus need the same hover feedback as chrome buttons.
+struct ChromeMenuHoverFeedback: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content
+            .overlay(ChromeMenuHoverTracker(isEnabled: isEnabled).allowsHitTesting(false))
+    }
+}
+
+private struct ChromeMenuHoverTracker: NSViewRepresentable {
+    let isEnabled: Bool
+    func makeNSView(context: Context) -> ChromeMenuHoverView { ChromeMenuHoverView() }
+    func updateNSView(_ view: ChromeMenuHoverView, context: Context) {
+        view.isControlEnabled = isEnabled
+        view.refreshHover()
+    }
+    static func dismantleNSView(_ view: ChromeMenuHoverView, coordinator: ()) {
+        view.onHover = nil
+    }
+}
+
+/// Track the actual native menu bounds without intercepting clicks or menu events.
+final class ChromeMenuHoverView: NSView {
+    var isControlEnabled = true
+    var onHover: ((Bool) -> Void)?
+    private var area: NSTrackingArea?
+    private var lastHover = false
+    override func draw(_ dirtyRect: NSRect) {
+        guard lastHover, isControlEnabled else { return }
+        NSColor.black.withAlphaComponent(DesignTokens.chromeHoverOpacity).setFill()
+        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+    }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area { removeTrackingArea(area) }
+        let next = NSTrackingArea(rect: .zero,
+            options: [.inVisibleRect, .activeInActiveApp, .mouseEnteredAndExited], owner: self)
+        addTrackingArea(next); area = next
+        refreshHover()
+    }
+    override func mouseEntered(with event: NSEvent) { setHover(isControlEnabled) }
+    override func mouseExited(with event: NSEvent) { setHover(false) }
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); refreshHover() }
+    func refreshHover() {
+        guard isControlEnabled, let window, !isHiddenOrHasHiddenAncestor, NSApp.isActive else { setHover(false); return }
+        setHover(visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
+    }
+    private func setHover(_ value: Bool) {
+        guard value != lastHover else { return }
+        lastHover = value
+        needsDisplay = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.lastHover == value else { return }
+            self.onHover?(value)
+        }
+    }
 }
 
 private struct WindowChromeStateReporter: NSViewRepresentable {

@@ -26,4 +26,11 @@ struct PDFDisplayModeMenuTests {
             #expect(manager.displayMode == mode)
         }
     }
+    @Test func pageNavigationControlsFollowNonContinuousModes() {
+        #expect(PDFDisplayMode.singlePage.showsPageNavigationButtons)
+        #expect(PDFDisplayMode.twoUp.showsPageNavigationButtons)
+        #expect(!PDFDisplayMode.singlePageContinuous.showsPageNavigationButtons)
+        #expect(!PDFDisplayMode.twoUpContinuous.showsPageNavigationButtons)
+    }
+
 }

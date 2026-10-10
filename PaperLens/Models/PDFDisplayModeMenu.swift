@@ -9,6 +9,8 @@
 import PDFKit
 
 extension PDFDisplayMode {
+    var showsPageNavigationButtons: Bool { self == .singlePage || self == .twoUp }
+
     /// Menu order: one page at a time, then the continuous variants.
     static let menuChoices: [PDFDisplayMode] = [
         .singlePage,

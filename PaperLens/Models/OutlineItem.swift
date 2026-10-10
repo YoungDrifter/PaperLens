@@ -13,14 +13,26 @@ struct OutlineItem: Identifiable {
     let title: String
     let pageIndex: Int?
     let children: [OutlineItem]?
-    /// Latest destination at or before the reading page; deeper entries win ties.
-    static func activeItemID(in items: [OutlineItem], pageIndex: Int) -> String? {
-        var best: (id: String, page: Int, depth: Int)?
+    /// Retain the page-local point for exact outline navigation.
+    let destination: PDFDestination?
+    /// Latest reached destination; offsets increase in the visible reading direction.
+    /// PDFView supplies the offsets so crop boxes, zoom and rotation use its transform.
+    /// With no offset provider this preserves page-only matching for callers/tests.
+    static func activeItemID(in items: [OutlineItem], pageIndex: Int,
+                             readingOffset: CGFloat = .greatestFiniteMagnitude,
+                             destinationOffset: (OutlineItem) -> CGFloat? = { _ in 0 }) -> String? {
+        var best: (id: String, page: Int, offset: CGFloat, depth: Int)?
         func visit(_ entries: [OutlineItem], depth: Int) {
             for item in entries {
                 if let page = item.pageIndex, page <= pageIndex,
-                   best == nil || page > best!.page || (page == best!.page && depth > best!.depth) {
-                    best = (item.id, page, depth)
+                   let offset = destinationOffset(item), offset.isFinite,
+                   page < pageIndex || offset <= readingOffset {
+                    // Stable outline order breaks equal-position, equal-depth ties.
+                    if best == nil || page > best!.page ||
+                        (page == best!.page && (offset > best!.offset ||
+                         (offset == best!.offset && depth > best!.depth))) {
+                        best = (item.id, page, offset, depth)
+                    }
                 }
                 if let children = item.children { visit(children, depth: depth + 1) }
             }
@@ -33,10 +45,14 @@ struct OutlineItem: Identifiable {
     private init?(outline: PDFOutline, path: String) {
         let trimmedLabel = outline.label?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         title = trimmedLabel.isEmpty ? "Untitled" : trimmedLabel
-        if let page = outline.destination?.page, let document = page.document {
+        let target = outline.destination ?? (outline.action as? PDFActionGoTo)?.destination
+        if let page = target?.page, let document = page.document,
+           document.index(for: page) != NSNotFound {
             pageIndex = document.index(for: page)
+            destination = target
         } else {
             pageIndex = nil
+            destination = nil
         }
 
         let baseID = "\(path)|\(title)|\(pageIndex ?? -1)"

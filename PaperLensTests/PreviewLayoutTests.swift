@@ -6,6 +6,77 @@ import Testing
 
 @MainActor
 struct PreviewLayoutTests {
+    @Test func nativeMenuHoverActuallyChangesRenderedBackground() async throws {
+        func descendants(_ view: NSView) -> [NSView] {
+            [view] + view.subviews.flatMap { descendants($0) }
+        }
+        let host = NSHostingView(rootView:
+            Menu { Button("Item") {} } label: {
+                Image(systemName: "ellipsis.circle").frame(width: 38, height: 38)
+            }
+            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+            .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
+            .modifier(ChromeMenuHoverFeedback()).padding(8).background(Color.white)
+        )
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 54, height: 54), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        let pointer = NSEvent.mouseLocation
+        let outsideOrigin = NSPoint(x: pointer.x + 100, y: pointer.y + 100)
+        window.setFrameOrigin(outsideOrigin)
+        window.orderFront(nil)
+        defer { window.close() }
+        try await Task.sleep(for: .milliseconds(100))
+        host.layoutSubtreeIfNeeded()
+        let tracker = try #require(descendants(host).compactMap { $0 as? ChromeMenuHoverView }.first)
+        #expect(tracker.bounds.width >= 38 && tracker.bounds.height >= 38)
+        let event = try #require(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero,
+            modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        func sampleBackground() throws -> CGFloat {
+            descendants(host).forEach { $0.needsDisplay = true }
+            host.display()
+            let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+            host.cacheDisplay(in: host.bounds, to: bitmap)
+            let point = tracker.convert(NSPoint(x: tracker.bounds.midX, y: 4), to: host)
+            let x = Int(point.x / host.bounds.width * CGFloat(bitmap.pixelsWide))
+            let y = Int(point.y / host.bounds.height * CGFloat(bitmap.pixelsHigh))
+            return try #require(bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB)).redComponent
+        }
+        tracker.mouseExited(with: event)
+        try await Task.sleep(for: .milliseconds(50))
+        let normal = try sampleBackground()
+        tracker.mouseEntered(with: event)
+        try await Task.sleep(for: .milliseconds(50))
+        let hovered = try sampleBackground()
+        #expect(normal > 0.98)
+        #expect(hovered < normal - 0.02, "native menu must visibly draw its hover background")
+        tracker.mouseExited(with: event)
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(abs(try sampleBackground() - normal) < 0.01)
+    }
+
+    @Test func nativeMenuHoverTracksEntryExitAndDisabledStateWithoutInterceptingClicks() async throws {
+        let view = ChromeMenuHoverView(frame: NSRect(x: 0, y: 0, width: 38, height: 38))
+        var states: [Bool] = []
+        view.onHover = { states.append($0) }
+        view.updateTrackingAreas()
+        #expect(view.trackingAreas.count == 1)
+        #expect(view.trackingAreas[0].options.contains(.inVisibleRect))
+        #expect(view.hitTest(NSPoint(x: 19, y: 19)) == nil)
+        let event = try #require(NSEvent.enterExitEvent(with: .mouseEntered, location: NSPoint(x: 19, y: 19),
+            modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        view.mouseEntered(with: event)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(states == [true])
+        view.mouseExited(with: event)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(states == [true, false])
+        view.isControlEnabled = false
+        view.mouseEntered(with: event)
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(states == [true, false])
+    }
+
     @Test func sidebarStateIsExclusiveAndTravelsWithTab() throws {
         let source = TabManager()
         let id = try #require(source.activeTabID)
@@ -140,6 +211,8 @@ struct PreviewLayoutTests {
         #expect(TopChromeView.trafficLightInset(isFullScreen: false) == 78)
         #expect(TopChromeView.height == 54)
         #expect(TopChromeView.expandedToolsWidth(windowWidth: 900) == 178)
+        // The top chrome must actually allocate enough room for every control.
+        #expect(DocumentToolbar.controlLevel(availableWidth: TopChromeView.expandedToolsWidth(windowWidth: 1200)) == 2)
     }
 
     @Test func trafficLightsRecoverFromDocumentTitleLayoutWithoutResize() async throws {
@@ -323,7 +396,7 @@ struct PreviewLayoutTests {
         long.destination = PDFDestination(page: document.page(at: 0)!, at: .zero)
         structural.insertChild(long, at: 0); root.insertChild(structural, at: 0)
         let items = OutlineItem.buildRoot(from: root)
-        let view = NativeOutlineView(items: items, pageIndex: 0, onSelect: { _ in })
+        let view = NativeOutlineView(items: items, activeItemID: OutlineItem.activeItemID(in: items, pageIndex: 0), onSelect: { _ in })
         let coordinator = view.makeCoordinator()
         let outline = OutlineTable(frame: NSRect(x: 0, y: 0, width: 240, height: 500))
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("outline")); column.width = 240
@@ -340,6 +413,89 @@ struct PreviewLayoutTests {
         #expect(coordinator.outlineView(outline, heightOfRowByItem: child) > wideHeight)
         #expect(outline.selectionHighlightStyle == .regular)
         #expect(outline.selectedRow >= 0)
+    }
+
+    @Test func hostedOutlineKeepsWrappedTitlesInsideActualRows() async throws {
+        let document = makeTestDocument(pageCount: 168)
+        let root = PDFOutline()
+        let titles = ["第一章 线性方程组的直接法", "第二章 线性方程组的迭代法",
+                      "第三章 最小二乘问题的数值方法", "第四章 特征值问题的数值解法"]
+        for (index, title) in titles.enumerated() {
+            let entry = PDFOutline()
+            entry.label = title
+            entry.destination = PDFDestination(page: document.page(at: [8, 45, 76, 102][index])!, at: .zero)
+            let child = PDFOutline()
+            child.label = "小节：迭代收敛条件与误差估计"
+            child.destination = entry.destination
+            let nested = PDFOutline()
+            nested.label = "4.1.3 特征值定位与误差界的推导"
+            nested.destination = entry.destination
+            child.insertChild(nested, at: 0)
+            entry.insertChild(child, at: 0)
+            root.insertChild(entry, at: index)
+        }
+        let items = OutlineItem.buildRoot(from: root)
+        let host = NSHostingView(rootView: NativeOutlineView(items: items, activeItemID: items[3].id, onSelect: { _ in }).background(Color.white))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 250, height: 500),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.contentView = nil; window.close() }
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        for width: CGFloat in [250, 180, 320, 240] {
+            window.setContentSize(NSSize(width: width, height: 500))
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(100))
+            let outline = try #require(descendants(host).compactMap { $0 as? OutlineTable }.first)
+            for expand in [false, true, false] {
+                if expand { outline.expandItem(nil, expandChildren: true) }
+                else { outline.collapseItem(nil, collapseChildren: true) }
+                host.layoutSubtreeIfNeeded()
+                // Realize the cells first, then allow AppKit's disclosure layout and
+                // the measured-width height pass to settle before inspecting frames.
+                for row in 0..<outline.numberOfRows {
+                    _ = outline.view(atColumn: 0, row: row, makeIfNecessary: true)
+                }
+                try await Task.sleep(for: .milliseconds(300))
+                host.layoutSubtreeIfNeeded()
+                for row in 0..<outline.numberOfRows {
+                    let cell = try #require(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? OutlineCell)
+                    cell.layoutSubtreeIfNeeded()
+                    let neededHeight = cell.title.sizeThatFits(NSSize(width: cell.title.frame.width, height: .greatestFiniteMagnitude)).height
+                    #expect(cell.bounds.height >= ceil(neededHeight) + 12,
+                            "width \(width), row \(row): \(cell.bounds.height) vs title \(neededHeight)")
+                    #expect(cell.title.frame.minY >= 6)
+                    #expect(cell.title.frame.maxY <= cell.bounds.height - 6)
+                    #expect(outline.rect(ofRow: row).height >= ceil(neededHeight) + 12)
+                    #expect(cell.title.stringValue == (outline.item(atRow: row) as? NativeOutlineView.Node)?.value.title)
+                    #expect(!cell.title.isHidden && !cell.isHidden)
+                    #expect(cell.superview != nil)
+                    let clip = try #require(outline.enclosingScrollView?.contentView)
+                    #expect(outline.frame.width <= clip.bounds.width + 0.5)
+                    let pageRect = cell.page.convert(cell.page.bounds, to: outline)
+                    #expect(pageRect.minX >= outline.visibleRect.minX)
+                    #expect(pageRect.maxX <= outline.visibleRect.maxX,
+                            "page label clipped at width \(width), row \(row)")
+                    let rowView = try #require(outline.rowView(atRow: row, makeIfNecessary: true) as? OutlineHoverRow)
+                    let pageInRow = cell.page.convert(cell.page.bounds, to: rowView)
+                    #expect(pageInRow.maxX <= rowView.backgroundRect.maxX - 8,
+                            "page label must remain inside the rounded highlight with padding")
+                    if outline.isExpandable(outline.item(atRow: row)) {
+                        #expect(outline.frameOfOutlineCell(atRow: row).minX >= rowView.backgroundRect.minX)
+                    }
+                }
+                if width == 250 && !expand,
+                   let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                    descendants(host).forEach { $0.needsDisplay = true }
+                    host.display()
+                    host.cacheDisplay(in: host.bounds, to: bitmap)
+                    if let png = bitmap.representation(using: .png, properties: [:]) {
+                        try png.write(to: FileManager.default.temporaryDirectory.appendingPathComponent("paperlens-outline-layout-fixed.png"))
+                    }
+                }
+            }
+        }
     }
 
     /// The Settings scene used to be a `NavigationSplitView`, i.e. a second

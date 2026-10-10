@@ -43,6 +43,25 @@ struct PDFManagerNavigationTests {
         #expect(!manager.canGoToPreviousPage && !manager.canGoToNextPage)
     }
 
+    @Test func twoPageButtonsAdvanceSpreadsAndStopAtOddLastPage() {
+        let manager = makeManager(pages: 5)
+        manager.displayMode = .twoUp
+        manager.nextPage()
+        #expect(manager.currentPageIndex == 2)
+        manager.nextPage()
+        #expect(manager.currentPageIndex == 4)
+        #expect(!manager.canGoToNextPage)
+        manager.previousPage()
+        #expect(manager.currentPageIndex == 2)
+        manager.goToPage(3)
+        manager.previousPage()
+        #expect(manager.currentPageIndex == 0)
+        manager.goToPage(1)
+        #expect(!manager.canGoToPreviousPage)
+        manager.nextPage()
+        #expect(manager.currentPageIndex == 2)
+    }
+
     // MARK: - goToDestination
 
     @Test

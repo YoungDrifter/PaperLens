@@ -542,7 +542,8 @@ private struct ThumbnailCellView: View {
         .clipShape(RoundedRectangle(cornerRadius: DesignTokens.thumbnailCornerRadius))
         .overlay(
             RoundedRectangle(cornerRadius: DesignTokens.thumbnailCornerRadius)
-                .strokeBorder(isSelected ? Color(white: 0.3) : .clear, lineWidth: DesignTokens.thumbnailBorderWidth)
+                .strokeBorder(isSelected ? DesignTokens.thumbnailSelectedBorder : DesignTokens.thumbnailBorder,
+                              lineWidth: isSelected ? DesignTokens.thumbnailSelectedBorderWidth : DesignTokens.thumbnailBorderWidth)
         )
     }
 
