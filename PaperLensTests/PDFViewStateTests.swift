@@ -114,6 +114,208 @@ struct PDFViewStateTests {
         #expect(scrollView.contentView.bounds.minX < 0)
     }
 
+    @Test(arguments: [PDFDisplayMode.twoUp, .twoUpContinuous], [0, 2, 4])
+    func fitsCenterTheEntireSpreadOnFirstApplication(mode: PDFDisplayMode, pageIndex: Int) async throws {
+        let view = StablePDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        let document = makeDocument(pageCount: 5, size: NSSize(width: 400, height: 500))
+        document.page(at: 3)?.rotation = 90
+        document.page(at: 3)?.setBounds(NSRect(x: 0, y: 0, width: 450, height: 650), for: .mediaBox)
+        view.displayMode = mode
+        view.autoScales = false
+        view.document = document
+        let page = try #require(document.page(at: pageIndex))
+        view.go(to: page)
+        view.layoutDocumentView()
+        try await Task.sleep(for: .milliseconds(100))
+        let manager = PDFManager()
+        manager.document = document
+        manager.currentPage = page
+        manager.currentPageIndex = pageIndex
+        manager.displayMode = mode
+        let coordinator = PDFViewWrapper.Coordinator(pdfManager: manager, annotationManager: AnnotationManager(), commentManager: CommentManager(), isActive: true)
+        NotificationCenter.default.addObserver(coordinator, selector: #selector(PDFViewWrapper.Coordinator.pageChanged(_:)), name: .PDFViewPageChanged, object: view)
+        NotificationCenter.default.addObserver(coordinator, selector: #selector(PDFViewWrapper.Coordinator.scaleChanged(_:)), name: .PDFViewScaleChanged, object: view)
+        defer { NotificationCenter.default.removeObserver(coordinator) }
+        view.displayMode = .singlePageContinuous
+        manager.currentPage = page
+        manager.currentPageIndex = pageIndex
+        coordinator.project(view, documentDidChange: false)
+        try await Task.sleep(for: .milliseconds(400))
+        let initialSpread = PDFViewWrapper.fittedSpreadRect(page, in: view)
+        #expect(abs(initialSpread.midX - view.bounds.midX) < 2, "mode \(mode.rawValue), page \(pageIndex), live page \(document.index(for: view.currentPage ?? page)) must fit without a second click")
+        #expect(initialSpread.width <= view.bounds.width + 2)
+        for fit in [FitEngine.Mode.page, .width] {
+            view.navigateToReadingDestination(PDFDestination(page: page, at: CGPoint(x: 30, y: 100)), outlineItemID: "fit-page")
+            let navigatedSpread = PDFViewWrapper.fittedSpreadRect(page, in: view)
+            if navigatedSpread.width <= view.bounds.width {
+                #expect(abs(navigatedSpread.midX - view.bounds.midX) < 2)
+            }
+            if let clip = view.documentScrollView?.contentView {
+                clip.scroll(to: NSPoint(x: -200, y: clip.bounds.minY))
+            }
+            manager.requestFitOnce(mode: fit)
+            coordinator.project(view, documentDidChange: false)
+            try await Task.sleep(for: .milliseconds(400))
+            let rect = PDFViewWrapper.fittedSpreadRect(page, in: view)
+            #expect(abs(rect.midX - view.bounds.midX) < 2, "the spread must center after one fit")
+            #expect(rect.width <= view.bounds.width + 2)
+            if fit == .page { #expect(rect.height <= view.bounds.height + 2) }
+            #expect(manager.pendingFit == nil)
+        }
+    }
+
+    @Test(arguments: [PDFDisplayMode.twoUp, .twoUpContinuous])
+    func documentRestoreKeepsSavedZoomWhenReusingView(mode: PDFDisplayMode) async throws {
+        let view = StablePDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        let document = makeDocument(pageCount: 4, size: NSSize(width: 400, height: 500))
+        view.document = document
+        view.displayMode = .singlePageContinuous
+        let manager = PDFManager()
+        manager.document = document
+        manager.currentPage = document.page(at: 2)
+        manager.currentPageIndex = 2
+        manager.displayMode = mode
+        manager.isAutoScaling = false
+        manager.scaleFactor = 1.65
+        manager.pendingFit = nil
+        manager.pendingScrollRestore = PDFDestination(page: document.page(at: 2)!, at: CGPoint(x: 12, y: 145))
+        let coordinator = PDFViewWrapper.Coordinator(pdfManager: manager, annotationManager: AnnotationManager(), commentManager: CommentManager(), isActive: true)
+        coordinator.project(view, documentDidChange: true)
+        try await Task.sleep(for: .milliseconds(450))
+        #expect(view.displayMode == mode)
+        #expect(abs(view.scaleFactor - 1.65) < 0.01)
+        #expect(manager.pendingFit == nil)
+    }
+
+    @Test(arguments: [PDFDisplayMode.singlePageContinuous, .twoUp, .twoUpContinuous])
+    func samePageOutlineClicksSelectRequestedSubsectionOnce(mode: PDFDisplayMode) async throws {
+        let view = StablePDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        let document = makeDocument(pageCount: 4, size: NSSize(width: 400, height: 900))
+        let root = PDFOutline()
+        let page = document.page(at: 1)!
+        for (index, y) in [CGFloat(800), 450, 150].enumerated() {
+            let entry = PDFOutline()
+            entry.label = "Subsection \(index)"
+            entry.destination = PDFDestination(page: page, at: CGPoint(x: 30, y: y))
+            root.insertChild(entry, at: index)
+        }
+        document.outlineRoot = root
+        let items = OutlineItem.buildRoot(from: root)
+        view.document = document
+        view.displayMode = mode
+        view.autoScales = false
+        view.scaleFactor = 0.55 // Entire spread fits: PDFKit cannot align every heading at the top.
+        let manager = PDFManager()
+        manager.document = document
+        manager.displayMode = mode
+        manager.currentPage = page
+        manager.currentPageIndex = 1
+        manager.scaleFactor = 0.55
+        let coordinator = PDFViewWrapper.Coordinator(pdfManager: manager, annotationManager: AnnotationManager(), commentManager: CommentManager(), isActive: true)
+        NotificationCenter.default.addObserver(coordinator, selector: #selector(PDFViewWrapper.Coordinator.pageChanged(_:)), name: .PDFViewPageChanged, object: view)
+        defer { NotificationCenter.default.removeObserver(coordinator) }
+        for index in [2, 0, 1] {
+            let previousViewport = view.documentScrollView?.contentView.bounds
+            manager.goToDestination(items[index].destination!, outlineItemID: items[index].id)
+            coordinator.project(view, documentDidChange: false)
+            try await Task.sleep(for: .milliseconds(350))
+            #expect(view.activeOutlineItemID(in: items) == items[index].id)
+            if index != 2 { #expect(view.documentScrollView?.contentView.bounds == previousViewport) }
+            #expect(abs(view.scaleFactor - 0.55) < 0.01)
+            #expect(manager.pendingNavigation == nil)
+            #expect(manager.currentPageIndex == 1)
+            let settledViewport = view.documentScrollView?.contentView.bounds
+            coordinator.project(view, documentDidChange: false)
+            #expect(view.documentScrollView?.contentView.bounds == settledViewport)
+        }
+        if mode == .twoUpContinuous, let scroll = view.documentScrollView {
+            scroll.contentView.scroll(to: CGPoint(x: scroll.contentView.bounds.minX, y: scroll.contentView.bounds.minY + 1000))
+            scroll.reflectScrolledClipView(scroll.contentView)
+            #expect(view.activeOutlineItemID(in: items) != items[1].id)
+        }
+    }
+
+    @Test(arguments: [PDFDisplayMode.singlePage, .singlePageContinuous, .twoUp, .twoUpContinuous])
+    func outlineClickKeepsExactParentAndCurrentPagePosition(mode: PDFDisplayMode) async throws {
+        let view = StablePDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        let document = makeDocument(pageCount: 4, size: NSSize(width: 400, height: 900))
+        let root = PDFOutline()
+        let parent = PDFOutline()
+        parent.label = "Section"
+        let child = PDFOutline()
+        child.label = "Subsection"
+        let page = document.page(at: 0)!
+        parent.destination = PDFDestination(page: page, at: CGPoint(x: kPDFDestinationUnspecifiedValue, y: kPDFDestinationUnspecifiedValue))
+        child.destination = PDFDestination(page: page, at: CGPoint(x: 30, y: 300))
+        parent.insertChild(child, at: 0)
+        root.insertChild(parent, at: 0)
+        document.outlineRoot = root
+        let items = OutlineItem.buildRoot(from: root)
+        view.document = document
+        view.displayMode = mode
+        view.autoScales = false
+        view.scaleFactor = 1.2
+        view.layoutDocumentView()
+        try await Task.sleep(for: .milliseconds(100))
+        view.go(to: PDFDestination(page: page, at: CGPoint(x: 30, y: 450)))
+        let viewport = view.documentScrollView?.contentView.bounds
+        view.navigateToReadingDestination(parent.destination!, outlineItemID: items[0].id)
+        #expect(view.activeOutlineItemID(in: items) == items[0].id)
+        #expect(view.documentScrollView?.contentView.bounds == viewport)
+        view.navigateToReadingDestination(child.destination!, outlineItemID: items[0].children![0].id)
+        #expect(view.activeOutlineItemID(in: items) == items[0].children![0].id)
+        #expect(view.documentScrollView?.contentView.bounds == viewport)
+        #expect(abs(view.scaleFactor - 1.2) < 0.01)
+        let otherPage = document.page(at: 3)!
+        view.navigateToReadingDestination(PDFDestination(page: otherPage, at: CGPoint(x: 30, y: 200)), outlineItemID: "other-page")
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(view.visiblePages.contains { $0 === otherPage })
+        #expect(view.activeOutlineItemID(in: items) == "other-page")
+        #expect(view.documentScrollView?.contentInsets.top == 0)
+    }
+
+    @Test(arguments: [PDFDisplayMode.twoUp, .twoUpContinuous])
+    func automaticOutlineTrackingStartsWithLeftPageOfSpread(mode: PDFDisplayMode) async throws {
+        let view = StablePDFView(frame: NSRect(x: 0, y: 0, width: 1000, height: 600))
+        let window = NSWindow(contentRect: view.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        defer { window.close() }
+        let document = makeDocument(pageCount: 4, size: NSSize(width: 400, height: 900))
+        let root = PDFOutline()
+        for index in 0..<4 {
+            let entry = PDFOutline()
+            entry.label = "Page \(index)"
+            entry.destination = PDFDestination(page: document.page(at: index)!, at: CGPoint(x: 30, y: 900))
+            root.insertChild(entry, at: index)
+        }
+        let items = OutlineItem.buildRoot(from: root)
+        view.document = document
+        view.displayMode = mode
+        view.autoScales = false
+        view.scaleFactor = 1
+        view.go(to: document.page(at: 2)!)
+        view.layoutDocumentView()
+        try await Task.sleep(for: .milliseconds(150))
+        #expect(view.activeOutlineItemID(in: items) == items[2].id)
+    }
+
     // MARK: - Fit requests
 
     @Test
@@ -202,13 +404,13 @@ struct PDFViewStateTests {
 
     // MARK: - Helpers
 
-    private func makeDocument(pageCount: Int) -> PDFDocument {
+    private func makeDocument(pageCount: Int, size: NSSize = NSSize(width: 32, height: 32)) -> PDFDocument {
         let document = PDFDocument()
         for index in 0..<pageCount {
-            let image = NSImage(size: NSSize(width: 32, height: 32))
+            let image = NSImage(size: size)
             image.lockFocus()
             NSColor.white.setFill()
-            NSBezierPath(rect: NSRect(x: 0, y: 0, width: 32, height: 32)).fill()
+            NSBezierPath(rect: NSRect(origin: .zero, size: size)).fill()
             image.unlockFocus()
             guard let page = PDFPage(image: image) else {
                 fatalError("Failed to create PDF page from test image.")

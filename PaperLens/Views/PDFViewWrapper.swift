@@ -157,11 +157,11 @@ struct PDFViewWrapper: NSViewRepresentable {
             guard let pdfView, let coordinator, coordinator.isActive,
                   coordinator.pdfManager.liveDestinationProviderOwner == ObjectIdentifier(coordinator),
                   pdfView.document === coordinator.pdfManager.document else { return }
-            let id = pdfView.activeOutlineItemID(in: coordinator.pdfManager.outlineItems())
             coordinator.ingestOrDefer { [weak coordinator, weak pdfView] in
                 guard let coordinator, let pdfView, coordinator.isActive,
                       coordinator.pdfManager.liveDestinationProviderOwner == ObjectIdentifier(coordinator),
                       pdfView.document === coordinator.pdfManager.document else { return }
+                let id = pdfView.activeOutlineItemID(in: coordinator.pdfManager.outlineItems())
                 coordinator.pdfManager.ingestOutlineSection(id)
             }
         }
@@ -361,7 +361,7 @@ struct PDFViewWrapper: NSViewRepresentable {
     static func centerPage(_ page: PDFPage, in pdfView: StablePDFView) {
         guard let scrollView = pdfView.documentScrollView,
               let documentView = scrollView.documentView else { return }
-        let pageRect = pdfView.convert(page.bounds(for: pdfView.displayBox), from: page)
+        let pageRect = fittedSpreadRect(page, in: pdfView)
         let rect = documentView.convert(pageRect, from: pdfView)
         let clip = scrollView.contentView.bounds
         scrollView.contentView.scroll(to: NSPoint(
@@ -371,22 +371,35 @@ struct PDFViewWrapper: NSViewRepresentable {
         scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 
-    /// Gathers live geometry from the view and delegates to the pure `FitEngine`.
-    /// The view-touching part (reading bounds + page media box) stays here; the
-    /// formula itself lives in `FitEngine` so it can be unit-tested in isolation.
-    private static func calculateFitScale(for pdfView: PDFView, page: PDFPage, mode: FitEngine.Mode = .width) -> CGFloat {
-        let viewBounds = pdfView.bounds
-        let pageBounds = page.bounds(for: pdfView.displayBox)
+    /// Use PDFKit's rendered spread: this includes unequal page sizes, rotation,
+    /// the actual gutter, and an unpaired final page.
+    static func fittedSpreadRect(_ page: PDFPage, in view: PDFView) -> NSRect {
+        var rect = view.convert(page.bounds(for: view.displayBox), from: page)
+        guard view.displayMode == .twoUp || view.displayMode == .twoUpContinuous,
+              let document = view.document else { return rect }
+        let index = document.index(for: page)
+        let first = view.displaysAsBook ? (index == 0 ? 0 : 1 + (index - 1) / 2 * 2) : index / 2 * 2
+        let indices = view.displaysAsBook && first == 0 ? [0] : [first, first + 1]
+        for index in indices {
+            if let sibling = document.page(at: index) {
+                rect = rect.union(view.convert(sibling.bounds(for: view.displayBox), from: sibling))
+            }
+        }
+        return rect
+    }
+
+    static func calculateFitScale(for pdfView: PDFView, page: PDFPage, mode: FitEngine.Mode = .width) -> CGFloat {
+        pdfView.layoutDocumentView()
+        let rect = fittedSpreadRect(page, in: pdfView)
+        guard rect.width > 0, rect.height > 0 else { return pdfView.scaleFactor }
         let inputs = FitEngine.FitInputs(
-            viewWidth: viewBounds.width,
-            viewHeight: viewBounds.height,
-            pageWidth: pageBounds.width,
-            pageHeight: pageBounds.height,
-            displayMode: pdfView.displayMode,
-            padding: DesignTokens.pdfViewPadding,
-            twoPageGap: DesignTokens.pdfTwoPageGap
+            viewWidth: pdfView.bounds.width, viewHeight: pdfView.bounds.height,
+            pageWidth: rect.width / pdfView.scaleFactor, pageHeight: rect.height / pdfView.scaleFactor,
+            displayMode: .singlePageContinuous, padding: DesignTokens.pdfViewPadding, twoPageGap: 0
         )
-        return FitEngine.scale(for: inputs, mode: mode)
+        // The rendered rectangle already contains both pages and the gutter.
+        let fitMode: FitEngine.Mode = mode == .page || (mode == .displayMode && pdfView.displayMode.showsPageNavigationButtons) ? .page : .width
+        return FitEngine.scale(for: inputs, mode: fitMode)
     }
 
     // MARK: - Coordinator
@@ -499,6 +512,7 @@ struct PDFViewWrapper: NSViewRepresentable {
                 pdfView.scheduleReadingViewportUpdate()
             }
 
+            let modeDidChange = pdfView.displayMode != pdfManager.displayMode
             applyDisplayMode(pdfManager.displayMode, to: pdfView)
 
             if pdfView.interactionMode != pdfManager.interactionMode {
@@ -511,7 +525,10 @@ struct PDFViewWrapper: NSViewRepresentable {
                 // re-apply (comment jump / position restore): bump the token so
                 // a stale delayed go(to:) can't yank the view back.
                 scrollApplyToken += 1
-                pdfView.go(to: page)
+                let selectingDisplayedOutlinePage = pdfView.preservesSelectedOutlinePage(page) ||
+                    (pdfManager.pendingNavigation != nil && pdfManager.pendingOutlineItemID != nil &&
+                     pdfView.visiblePages.contains { $0 === page })
+                if documentDidChange || !selectingDisplayedOutlinePage { pdfView.go(to: page) }
             }
 
             if pdfManager.isAutoScaling {
@@ -535,6 +552,8 @@ struct PDFViewWrapper: NSViewRepresentable {
                 }
             }
 
+            if modeDidChange && !documentDidChange { scheduleFitForDisplayModeChange(on: pdfView) }
+
             // Explicit jump-to (e.g. clicking a comment): scroll to the target
             // point once page/scale have settled. `pendingNavigation` is observable,
             // so this also runs when the destination is on the page already showing.
@@ -553,7 +572,6 @@ struct PDFViewWrapper: NSViewRepresentable {
         private func applyDisplayMode(_ mode: PDFDisplayMode, to pdfView: StablePDFView) {
             guard pdfView.displayMode != mode else { return }
             pdfView.displayMode = mode
-            scheduleFitForDisplayModeChange(on: pdfView)
         }
 
         // MARK: Ingest (live view -> manager)
@@ -679,7 +697,9 @@ struct PDFViewWrapper: NSViewRepresentable {
 
         @objc func pageChanged(_ notification: Notification) {
             (notification.object as? StablePDFView)?.scheduleReadingViewportUpdate()
-            guard let pdfView = notification.object as? PDFView,
+            // Reflow and go(to:) may synchronously report a neighbouring page.
+            // The projector already holds the intended page; do not replace it with this echo.
+            guard !isProjecting, let pdfView = notification.object as? PDFView,
                   let currentPage = pdfView.currentPage,
                   let document = pdfView.document else {
                 return
@@ -719,7 +739,7 @@ struct PDFViewWrapper: NSViewRepresentable {
 
         /// Resolves a one-shot `FitRequest` once the view is laid out, writes the
         /// scale through the single projector path, then clears the request.
-        private func performFit(on pdfView: StablePDFView, request: FitRequest, retryCount: Int) {
+        private func performFit(on pdfView: StablePDFView, request: FitRequest, retryCount: Int, page: PDFPage? = nil) {
             DispatchQueue.main.async { [weak self, weak pdfView] in
                 guard let self, let pdfView else { return }
                 // Bail if a newer command (zoom, mode change) superseded this fit.
@@ -730,16 +750,18 @@ struct PDFViewWrapper: NSViewRepresentable {
                    retryCount < DesignTokens.maxReadinessRetries {
                     DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfViewReadyRetryInterval) { [weak self, weak pdfView] in
                         guard let self, let pdfView else { return }
-                        self.performFit(on: pdfView, request: request, retryCount: retryCount + 1)
+                        self.performFit(on: pdfView, request: request, retryCount: retryCount + 1, page: page)
                     }
                     return
                 }
 
-                guard let currentPage = pdfView.currentPage ?? self.pdfManager.currentPage else {
+                guard let currentPage = page ?? self.pdfManager.currentPage ?? pdfView.currentPage else {
                     self.pdfManager.pendingFit = nil
                     return
                 }
 
+                self.isProjecting = true
+                defer { self.isProjecting = false }
                 let baseScale = PDFViewWrapper.calculateFitScale(for: pdfView, page: currentPage, mode: request.mode)
                 let fitScale = baseScale
                 if fitScale > 0 {
@@ -748,14 +770,20 @@ struct PDFViewWrapper: NSViewRepresentable {
                     self.applyScale(clamped, to: pdfView)   // then mirror onto the view
                 }
 
+                pdfView.layoutDocumentView()
+                self.scrollApplyToken &+= 1
+                let token = self.scrollApplyToken
                 self.pdfManager.pendingFit = nil
                 if request.mode == .page {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfLayoutSettleDelay) { [weak pdfView] in
-                        guard let pdfView else { return }
+                    PDFViewWrapper.centerPage(currentPage, in: pdfView)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfLayoutSettleDelay) { [weak self, weak pdfView] in
+                        guard let self, self.scrollApplyToken == token, let pdfView,
+                              !PDFViewWrapper.scalesDiffer(pdfView.scaleFactor, self.pdfManager.scaleFactor) else { return }
                         PDFViewWrapper.centerPage(currentPage, in: pdfView)
                     }
                 } else {
-                    self.scheduleCenterContent(in: pdfView, scrollToTop: request.scrollToTop)
+                    self.centerContent(in: pdfView, scrollToTop: request.scrollToTop, page: currentPage)
+                    self.scheduleCenterContent(in: pdfView, scrollToTop: request.scrollToTop, page: currentPage)
                 }
             }
         }
@@ -791,7 +819,12 @@ struct PDFViewWrapper: NSViewRepresentable {
                     return
                 }
 
-                pdfView.go(to: destination)
+                let outlineItemID = self.pdfManager.pendingOutlineItemID
+                self.isProjecting = true
+                if oneShot == \.pendingNavigation {
+                    pdfView.navigateToReadingDestination(destination, outlineItemID: outlineItemID)
+                } else { pdfView.go(to: destination) }
+                self.isProjecting = false
                 self.pdfManager[keyPath: oneShot] = nil
                 self.scrollApplyToken &+= 1
                 let token = self.scrollApplyToken
@@ -801,61 +834,54 @@ struct PDFViewWrapper: NSViewRepresentable {
                 // can't yank the user back after they've navigated elsewhere.
                 DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfLayoutSettleDelay) { [weak self, weak pdfView] in
                     guard let self, self.scrollApplyToken == token else { return }
-                    pdfView?.go(to: destination)
+                    guard let pdfView else { return }
+                    self.isProjecting = true
+                    if oneShot == \.pendingNavigation {
+                        pdfView.navigateToReadingDestination(destination, outlineItemID: outlineItemID)
+                    } else { pdfView.go(to: destination) }
+                    self.isProjecting = false
                 }
             }
         }
 
         /// Re-fits after a display-mode change. PDFKit reflows asynchronously, so we
-        /// wait for the settle delay before measuring, then scroll to the page top.
+        /// wait for the settle delay before measuring the new spread.
         private func scheduleFitForDisplayModeChange(on pdfView: StablePDFView) {
+            scrollApplyToken &+= 1
+            let token = scrollApplyToken
+            let mode = pdfView.displayMode
+            let scale = pdfManager.scaleFactor
+            let page = pdfManager.currentPage ?? pdfView.currentPage
             DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfDisplayModeSettleDelay) { [weak self, weak pdfView] in
-                guard let self,
-                      let pdfView,
-                      let currentPage = pdfView.currentPage ?? self.pdfManager.currentPage else {
-                    return
-                }
-
-                let baseScale = PDFViewWrapper.calculateFitScale(for: pdfView, page: currentPage)
-                let fitScale = baseScale
-                guard fitScale > 0 else { return }
-
-                let clamped = min(max(fitScale, DesignTokens.pdfMinScale), DesignTokens.pdfMaxScale)
-                self.pdfManager.scaleFactor = clamped
-                self.applyScale(clamped, to: pdfView)
-
-                let pageBounds = currentPage.bounds(for: .mediaBox)
-                let topLeft = CGPoint(x: pageBounds.minX, y: pageBounds.maxY)
-                pdfView.go(to: PDFDestination(page: currentPage, at: topLeft))
-
-                DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfLayoutSettleDelay) { [weak self, weak pdfView] in
-                    guard let self, let pdfView else { return }
-                    self.centerContentAfterFit(in: pdfView)
-                }
+                guard let self, let pdfView, self.scrollApplyToken == token,
+                      pdfView.displayMode == mode, self.pdfManager.pendingFit == nil,
+                      !PDFViewWrapper.scalesDiffer(self.pdfManager.scaleFactor, scale), !self.pdfManager.isAutoScaling else { return }
+                let request = FitRequest(scrollToTop: false, mode: mode.showsPageNavigationButtons ? .page : .width)
+                self.pdfManager.pendingFit = request
+                self.performFit(on: pdfView, request: request, retryCount: 0, page: page)
             }
         }
 
-        private func scheduleCenterContent(in pdfView: StablePDFView, scrollToTop: Bool) {
+        private func scheduleCenterContent(in pdfView: StablePDFView, scrollToTop: Bool, page: PDFPage? = nil) {
+            let token = scrollApplyToken
             // Delay: PDFKit needs a layout pass before scroll/center position is meaningful.
             DispatchQueue.main.asyncAfter(deadline: .now() + DesignTokens.pdfLayoutSettleDelay) { [weak self, weak pdfView] in
                 guard let self, let pdfView else { return }
-                self.centerContent(in: pdfView, scrollToTop: scrollToTop)
+                guard self.scrollApplyToken == token else { return }
+                self.centerContent(in: pdfView, scrollToTop: scrollToTop, page: page)
             }
         }
 
-        private func centerContent(in pdfView: StablePDFView, scrollToTop: Bool) {
+        private func centerContent(in pdfView: StablePDFView, scrollToTop: Bool, page: PDFPage? = nil) {
             guard let scrollView = pdfView.documentScrollView,
                   let documentView = scrollView.documentView else { return }
 
-            let docWidth = documentView.bounds.width
             let clipWidth = scrollView.contentView.bounds.width
 
-            let centeredX: CGFloat
-            if docWidth > clipWidth {
-                centeredX = (docWidth - clipWidth) / 2.0
-            } else {
-                centeredX = scrollView.contentView.bounds.origin.x
-            }
+            let contentRect = (page ?? pdfView.currentPage).map {
+                documentView.convert(PDFViewWrapper.fittedSpreadRect($0, in: pdfView), from: pdfView)
+            } ?? documentView.bounds
+            let centeredX = contentRect.midX - clipWidth / 2
 
             // PDFKit's document view is flipped (`isFlipped == true`), so the top of
             // the document — page 1 — is y = 0. The bottom is `docHeight - clipHeight`,
@@ -870,21 +896,6 @@ struct PDFViewWrapper: NSViewRepresentable {
             scrollView.reflectScrolledClipView(scrollView.contentView)
         }
 
-        private func centerContentAfterFit(in pdfView: StablePDFView) {
-            guard let scrollView = pdfView.documentScrollView,
-                  let documentView = scrollView.documentView else { return }
 
-            let docWidth = documentView.bounds.width
-            let clipWidth = scrollView.contentView.bounds.width
-
-            guard docWidth > clipWidth else { return }
-
-            let centeredX = (docWidth - clipWidth) / 2.0
-            let currentY = scrollView.contentView.bounds.origin.y
-            let origin = NSPoint(x: centeredX, y: currentY)
-
-            scrollView.contentView.scroll(to: origin)
-            scrollView.reflectScrolledClipView(scrollView.contentView)
-        }
     }
 }

@@ -58,6 +58,7 @@ final class PDFManager {
     var activeOutlineItemID: String?
 
     func ingestOutlineSection(_ id: String?) {
+        if pendingNavigation != nil, pendingOutlineItemID != nil { return }
         if activeOutlineItemID != id { activeOutlineItemID = id }
     }
     var scaleFactor: CGFloat = 1.0
@@ -72,6 +73,7 @@ final class PDFManager {
     /// it must drive a projection pass even when the destination is on the page
     /// already showing; consumed and cleared by the projector.
     var pendingNavigation: PDFDestination?
+    @ObservationIgnored var pendingOutlineItemID: String?
     /// Reads the live `PDFView`'s current destination for persistence. Set by the
     /// view coordinator while a live view is mounted; nil otherwise.
     @ObservationIgnored var liveDestinationProvider: (() -> PDFDestination?)?
@@ -391,7 +393,9 @@ final class PDFManager {
     /// otherwise falls back to first-page, fit-to-width defaults. The single
     /// place document-load view state is initialized.
     private func applyInitialViewState(for document: PDFDocument, url: URL) {
-        if let saved = documentStateStore.state(for: url),
+        let savedState = documentStateStore.state(for: url)
+        displayMode = savedState?.displayModeRawValue.flatMap(PDFDisplayMode.init(rawValue:)) ?? .singlePageContinuous
+        if let saved = savedState,
            saved.pageIndex >= 0, saved.pageIndex < document.pageCount,
            let page = document.page(at: saved.pageIndex) {
             currentPageIndex = saved.pageIndex
@@ -431,7 +435,8 @@ final class PDFManager {
             pageIndex: pageIndex,
             scaleFactor: scaleFactor,
             isAutoScaling: isAutoScaling,
-            scrollPoint: destination?.point
+            scrollPoint: destination?.point,
+            displayModeRawValue: displayMode.rawValue
         )
     }
 
@@ -483,7 +488,7 @@ final class PDFManager {
     /// (so Back returns) only when the page actually changes. `pendingNavigation`
     /// is observable, so the projector also runs when the destination is on the
     /// page already showing.
-    func goToDestination(_ destination: PDFDestination) {
+    func goToDestination(_ destination: PDFDestination, outlineItemID: String? = nil) {
         guard let document, let page = destination.page else { return }
         let index = document.index(for: page)
         guard index != NSNotFound else { return }
@@ -495,6 +500,9 @@ final class PDFManager {
         // restore — otherwise the restore's settle retry can land after this
         // navigation and yank the view away from the target.
         pendingScrollRestore = nil
+        pendingFit = nil
+        pendingOutlineItemID = outlineItemID
+        if let outlineItemID { activeOutlineItemID = outlineItemID }
         pendingNavigation = destination
     }
 

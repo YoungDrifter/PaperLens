@@ -40,10 +40,11 @@ struct SidebarView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).padding(16)
                 } else {
                     NativeOutlineView(items: items, activeItemID: pdfManager.activeOutlineItemID,
-                                      onSelect: { destination in
+                                      onSelect: { item in
+                                          guard let destination = item.destination else { return }
                                           let samePage = destination.page === pdfManager.currentPage
                                           if samePage { pdfManager.pushNavigationState() }
-                                          pdfManager.goToDestination(destination)
+                                          pdfManager.goToDestination(destination, outlineItemID: item.id)
                                       })
                 }
             case .thumbnails:

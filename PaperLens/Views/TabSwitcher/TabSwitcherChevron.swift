@@ -39,6 +39,8 @@ struct TabSwitcherChevron: View {
                     TabSwitcherChevronTarget(tabManager: tabManager)
                 }
             }
+            .modifier(ChromeMenuHoverFeedback())
+            .disabled(!isInteractive)
             .help("Recent Files")
             .accessibilityLabel("Recent Files")
             .accessibilityAddTraits(.isButton)

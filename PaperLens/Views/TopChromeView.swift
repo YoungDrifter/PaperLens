@@ -129,7 +129,9 @@ struct TopChromeView: View {
                 .frame(width: Self.pageControlWidth(windowWidth: windowWidth), height: DesignTokens.chromeButtonSize)
                 .paperLensGlassCapsule()
         }
-        .buttonStyle(.plain).disabled(total == 0).help("Go to Page")
+        .buttonStyle(.plain)
+        .modifier(ChromeMenuHoverFeedback())
+        .disabled(total == 0).help("Go to Page")
         .accessibilityLabel("Page \(page) of \(total); Go to Page")
     }
     static func pageControlWidth(windowWidth: CGFloat) -> CGFloat {
@@ -192,45 +194,81 @@ private struct ChromeMenuHoverTracker: NSViewRepresentable {
         view.refreshHover()
     }
     static func dismantleNSView(_ view: ChromeMenuHoverView, coordinator: ()) {
-        view.onHover = nil
+        view.isControlEnabled = false
+        view.refreshHover()
     }
 }
 
 /// Track the actual native menu bounds without intercepting clicks or menu events.
 final class ChromeMenuHoverView: NSView {
     var isControlEnabled = true
-    var onHover: ((Bool) -> Void)?
     private var area: NSTrackingArea?
-    private var lastHover = false
-    override func draw(_ dirtyRect: NSRect) {
-        guard lastHover, isControlEnabled else { return }
-        NSColor.black.withAlphaComponent(DesignTokens.chromeHoverOpacity).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+    private var mouseMonitor: Any?
+    private var windowObservers: [NSObjectProtocol] = []
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+    }
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        wantsLayer = true
+    }
+    override func layout() {
+        super.layout()
+        layer?.cornerRadius = min(bounds.width, bounds.height) / 2
+        refreshHover()
     }
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let area { removeTrackingArea(area) }
         let next = NSTrackingArea(rect: .zero,
-            options: [.inVisibleRect, .activeInActiveApp, .mouseEnteredAndExited], owner: self)
-        addTrackingArea(next); area = next
+            options: [.inVisibleRect, .activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved], owner: self)
+        addTrackingArea(next)
+        area = next
         refreshHover()
     }
-    override func mouseEntered(with event: NSEvent) { setHover(isControlEnabled) }
+    // AppKit can synthesize entry during initial layout; validate the actual pointer.
+    override func mouseEntered(with event: NSEvent) { refreshHover() }
     override func mouseExited(with event: NSEvent) { setHover(false) }
-    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); refreshHover() }
+    override func mouseMoved(with event: NSEvent) { refreshHover() }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        windowObservers.forEach(NotificationCenter.default.removeObserver)
+        windowObservers.removeAll()
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+        mouseMonitor = nil
+        setHover(false)
+        guard let window else { return }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDown, .leftMouseUp]) { [weak self] event in
+            self?.refreshHover()
+            return event
+        }
+        for name in [NSWindow.didResignKeyNotification, NSWindow.didBecomeKeyNotification, NSWindow.didMoveNotification] {
+            windowObservers.append(NotificationCenter.default.addObserver(forName: name, object: window, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshHover() }
+            })
+        }
+        refreshHover()
+    }
+    override func viewDidHide() { super.viewDidHide(); setHover(false) }
+    deinit {
+        windowObservers.forEach(NotificationCenter.default.removeObserver)
+        if let mouseMonitor { NSEvent.removeMonitor(mouseMonitor) }
+    }
     func refreshHover() {
-        guard isControlEnabled, let window, !isHiddenOrHasHiddenAncestor, NSApp.isActive else { setHover(false); return }
-        setHover(visibleRect.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)))
+        guard isControlEnabled, let window, !isHiddenOrHasHiddenAncestor, window.isKeyWindow, NSApp.isActive else { setHover(false); return }
+        let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
+        setHover(!visibleRect.isEmpty && visibleRect.contains(point))
     }
     private func setHover(_ value: Bool) {
-        guard value != lastHover else { return }
-        lastHover = value
-        needsDisplay = true
-        DispatchQueue.main.async { [weak self] in
-            guard let self, self.lastHover == value else { return }
-            self.onHover?(value)
-        }
+        // Replace the layer color, including clearing it. Returning early from draw()
+        // left the transparent overlay's previously rendered hover pixels behind.
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        layer?.backgroundColor = value ? NSColor.black.withAlphaComponent(DesignTokens.chromeHoverOpacity).cgColor : nil
+        CATransaction.commit()
     }
 }
 

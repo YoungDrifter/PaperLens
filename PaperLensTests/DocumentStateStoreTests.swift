@@ -116,6 +116,52 @@ struct DocumentStateStoreTests {
         #expect(manager.pendingFit == FitRequest(scrollToTop: true))
     }
 
+    @Test
+    func legacyHistoryDecodesWithoutLosingReadingPosition() throws {
+        let data = Data(#"{"pageIndex":3,"scaleFactor":1.4,"isAutoScaling":false}"#.utf8)
+        let state = try JSONDecoder().decode(DocumentViewState.self, from: data)
+        #expect(state.pageIndex == 3)
+        #expect(state.scaleFactor == 1.4)
+        #expect(state.displayModeRawValue == nil)
+    }
+
+    @Test(arguments: [PDFDisplayMode.singlePage, .singlePageContinuous, .twoUp, .twoUpContinuous])
+    func reopeningRestoresReadingModeAndSidebar(mode: PDFDisplayMode) throws {
+        let url = try writeTemporaryDocument(pageCount: 4)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let tabs = TabManager()
+        let pdf = try #require(tabs.activePDFManager)
+        let defaults = makeDefaults()
+        pdf.documentStateStore = DocumentStateStore(defaults: defaults)
+        tabs.openDocument(url: url, isSecurityScoped: false)
+        let id = try #require(tabs.activeTabID)
+        pdf.displayMode = mode
+        pdf.goToPage(2)
+        pdf.scaleFactor = 1.65
+        pdf.liveDestinationProvider = { PDFDestination(page: pdf.document!.page(at: 2)!, at: CGPoint(x: 12, y: 145)) }
+        tabs.setShowingSidebar(true, for: id)
+        tabs.setSidebarMode(.comments, for: id)
+        tabs.setOutlineSidebarWidth(318, for: id)
+        tabs.flushActiveTabViewState()
+        pdf.liveDestinationProvider = nil
+        pdf.closeDocument()
+        tabs.tabs[0].documentURL = nil
+        // Read from a fresh store, as after restarting the application.
+        pdf.documentStateStore = DocumentStateStore(defaults: defaults)
+        tabs.openDocument(url: url, isSecurityScoped: false, replaceCurrent: true)
+        #expect(pdf.displayMode == mode)
+        #expect(pdf.currentPageIndex == 2)
+        #expect(pdf.scaleFactor == 1.65)
+        #expect(pdf.pendingScrollRestore?.point == CGPoint(x: 12, y: 145))
+        #expect(pdf.pendingFit == nil)
+        #expect(tabs.showingSidebar(for: id))
+        #expect(tabs.sidebarMode(for: id) == .comments)
+        #expect(tabs.outlineSidebarWidth(for: id) == DesignTokens.outlineSidebarDefaultWidth)
+        tabs.setShowingSidebar(false, for: id)
+        tabs.flushActiveTabViewState()
+        #expect(pdf.documentStateStore.state(for: url)?.sidebarVisible == false)
+    }
+
     // MARK: - Helpers
 
     private func makeDefaults() -> UserDefaults {

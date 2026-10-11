@@ -40,6 +40,16 @@ struct OutlineItem: Identifiable {
         visit(items, depth: 0)
         return best?.id
     }
+    /// PDF destinations may omit either coordinate (page-only/FitH links).
+    /// PDFKit's sentinel is finite, so checking isFinite alone is insufficient.
+    static func readingPoint(for destination: PDFDestination) -> CGPoint {
+        let box = destination.page?.bounds(for: .cropBox) ?? .zero
+        let point = destination.point
+        return CGPoint(
+            x: point.x.isFinite && point.x != kPDFDestinationUnspecifiedValue ? point.x : box.midX,
+            y: point.y.isFinite && point.y != kPDFDestinationUnspecifiedValue ? point.y : box.maxY
+        )
+    }
     // `buildRoot` is the single construction path for the outline tree.
 
     private init?(outline: PDFOutline, path: String) {

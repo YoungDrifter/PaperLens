@@ -382,8 +382,8 @@ final class TabManager {
         // Capture the closing tab's reading position before teardown, but only
         // when it's the active tab (its live view still exists for an exact scroll
         // point); background tabs were already persisted when switched away from.
-        if activeTabID == tabID, let pdfManager = sessions[tabID]?.pdfManager {
-            persistViewState(for: pdfManager)
+        if activeTabID == tabID, let session = sessions[tabID] {
+            persistViewState(for: session)
         }
 
         // closeSession() performs the ordered teardown (close document, clear
@@ -505,6 +505,7 @@ final class TabManager {
            let activeID = activeTabID,
            (replaceCurrent || (!activeTab.hasDocument && !isAwaitingPassword(for: activeID))),
            let pdfManager = sessions[activeID]?.pdfManager {
+            if let session = sessions[activeID] { persistViewState(for: session) }
             let result = pdfManager.loadDocument(from: url, isSecurityScoped: isSecurityScoped)
             handleLoadResult(result, for: activeID, url: url, isSecurityScoped: isSecurityScoped)
         } else {
@@ -607,6 +608,7 @@ final class TabManager {
     ) {
         switch result {
         case .success:
+            restoreSidebarState(for: tabID, url: url)
             clearPendingPasswordRequest(for: tabID)
             clearSearchState(for: tabID)
             if let index = tabs.firstIndex(where: { $0.id == tabID }) {
@@ -713,6 +715,7 @@ final class TabManager {
         }
 
         if session.pdfManager.unlockDocument(password: password) {
+            restoreSidebarState(for: tabID, url: request.url)
             clearSearchState(for: tabID)
             if let index = tabs.firstIndex(where: { $0.id == tabID }) {
                 tabs[index].documentURL = request.url
@@ -785,7 +788,7 @@ final class TabManager {
     private func saveCurrentTabState() {
         guard let id = activeTabID, let session = sessions[id] else { return }
         session.captureViewSnapshot()
-        persistViewState(for: session.pdfManager)
+        persistViewState(for: session)
     }
 
     // MARK: - Reading-Position Persistence
@@ -794,13 +797,23 @@ final class TabManager {
     /// shared store. Safe to call at any lifecycle boundary (window close, quit).
     func flushActiveTabViewState() {
         guard let id = activeTabID, let session = sessions[id] else { return }
-        persistViewState(for: session.pdfManager)
+        persistViewState(for: session)
     }
 
-    private func persistViewState(for pdfManager: PDFManager) {
-        guard let url = pdfManager.documentURL,
-              let state = pdfManager.captureViewState() else { return }
-        DocumentStateStore.shared.save(state, for: url)
+    private func persistViewState(for session: TabSession) {
+        guard let url = session.pdfManager.documentURL,
+              var state = session.pdfManager.captureViewState() else { return }
+        state.sidebarVisible = session.uiState.showingSidebar
+        state.sidebarModeRawValue = session.uiState.sidebarMode.rawValue
+        session.pdfManager.documentStateStore.save(state, for: url)
+    }
+
+    private func restoreSidebarState(for tabID: UUID, url: URL) {
+        guard let session = sessions[tabID] else { return }
+        let saved = session.pdfManager.documentStateStore.state(for: url)
+        session.uiState = TabUIState()
+        session.uiState.showingSidebar = saved?.sidebarVisible ?? false
+        session.uiState.sidebarMode = saved?.sidebarModeRawValue.flatMap(SidebarMode.init(rawValue:)) ?? .outline
     }
 
     private func confirmClose(tabID: UUID, pdfManager: PDFManager) -> Bool {

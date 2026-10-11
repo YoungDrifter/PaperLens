@@ -10,7 +10,7 @@ import AppKit
 import Observation
 
 /// Per-tab UI state (sidebars, dialogs, edit mode). Travels with the session
-/// when a tab is moved between windows. Not persisted.
+/// when a tab is moved between windows. Sidebar settings are also saved per document.
 struct TabUIState: Sendable {
     var showingSidebar = false
     var sidebarMode: SidebarMode = .outline

@@ -36,18 +36,71 @@ final class StablePDFView: PDFView {
         }
     }
 
+    // Keep the explicitly chosen subsection until the viewport changes,
+    // then resume automatic tracking from the visible reading position.
+    private var outlineNavigationDestination: PDFDestination?
+    private var outlineNavigationViewport: NSRect?
+    private var selectedOutlineItemID: String?
+
+    func navigateToReadingDestination(_ destination: PDFDestination, outlineItemID: String? = nil) {
+        guard let page = destination.page, page.document === document else { return }
+        // Outline navigation is page based. Selecting an entry on a displayed
+        // page changes only the selected row, never the reading position.
+        let alreadyDisplayed = currentPage === page ||
+            visiblePages.contains { $0 === page }
+        if !alreadyDisplayed || outlineItemID == nil {
+            if let scrollView = documentScrollView {
+                scrollView.contentInsets = NSEdgeInsetsZero
+            }
+            if outlineItemID == nil { go(to: destination) }
+            else { go(to: page) }
+            layoutDocumentView()
+        }
+        selectedOutlineItemID = outlineItemID
+        outlineNavigationDestination = destination
+        outlineNavigationViewport = documentScrollView?.contentView.bounds
+        scheduleReadingViewportUpdate()
+    }
+
+    func preservesSelectedOutlinePage(_ page: PDFPage) -> Bool {
+        selectedOutlineItemID != nil && outlineNavigationDestination?.page === page &&
+            outlineNavigationViewport == documentScrollView?.contentView.bounds
+    }
+
     func activeOutlineItemID(in items: [OutlineItem]) -> String? {
         guard let document, !bounds.isEmpty else { return nil }
         let inset = min(DesignTokens.outlineReadingInset, bounds.height / 2)
-        let anchor = CGPoint(x: bounds.midX, y: isFlipped ? bounds.minY + inset : bounds.maxY - inset)
-        guard let readingPage = page(for: anchor, nearest: true) else { return nil }
+        var anchor = CGPoint(x: bounds.midX, y: isFlipped ? bounds.minY + inset : bounds.maxY - inset)
+        var readingPage: PDFPage?
+        if let destination = outlineNavigationDestination, let page = destination.page,
+           page.document === document, outlineNavigationViewport == documentScrollView?.contentView.bounds {
+            if let selectedOutlineItemID { return selectedOutlineItemID }
+            readingPage = page
+            anchor = convert(destination.point, from: page)
+        } else {
+            selectedOutlineItemID = nil
+            outlineNavigationDestination = nil
+            outlineNavigationViewport = nil
+            if displayMode == .twoUp || displayMode == .twoUpContinuous {
+                // The midpoint lies in the gutter. Read the first visible page
+                // in document order instead of PDFKit's nearest-page tie breaker.
+                readingPage = visiblePages.filter {
+                    let rect = convert($0.bounds(for: .cropBox), from: $0)
+                    let visible = bounds.intersection(rect)
+                    return !visible.isNull && !visible.isEmpty &&
+                        anchor.y >= rect.minY && anchor.y <= rect.maxY
+                }.min { document.index(for: $0) < document.index(for: $1) }
+            }
+            if readingPage == nil { readingPage = page(for: anchor, nearest: true) }
+        }
+        guard let readingPage else { return nil }
         let pageIndex = document.index(for: readingPage)
         guard pageIndex != NSNotFound else { return nil }
         let readingOffset = isFlipped ? anchor.y : -anchor.y
         return OutlineItem.activeItemID(in: items, pageIndex: pageIndex, readingOffset: readingOffset) { item in
             guard let destination = item.destination, let page = destination.page,
                   page.document === document else { return nil }
-            let point = convert(destination.point, from: page)
+            let point = convert(OutlineItem.readingPoint(for: destination), from: page)
             return self.isFlipped ? point.y : -point.y
         }
     }

@@ -178,7 +178,7 @@ struct OutlineItemTests {
         let children = items[0].children!
         var navigations: [PDFDestination] = []
         let owner = NativeOutlineView(items: items, activeItemID: children[0].id,
-                                      onSelect: { navigations.append($0) })
+                                      onSelect: { if let destination = $0.destination { navigations.append(destination) } })
         let coordinator = NativeOutlineView.Coordinator(owner)
         let outline = OutlineTable(frame: NSRect(x: 0, y: 0, width: 240, height: 500))
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("outline"))

@@ -5,7 +5,7 @@ import PDFKit
 struct NativeOutlineView: NSViewRepresentable {
     let items: [OutlineItem]
     let activeItemID: String?
-    let onSelect: (PDFDestination) -> Void
+    let onSelect: (OutlineItem) -> Void
     func makeCoordinator() -> Coordinator { Coordinator(self) }
     func makeNSView(context: Context) -> NSScrollView {
         let scroll = NSScrollView()
@@ -168,8 +168,8 @@ struct NativeOutlineView: NSViewRepresentable {
         private func navigate(row: Int) {
             guard !synchronizing, let outline,
                   let node = outline.item(atRow: row) as? Node,
-                  let destination = node.value.destination else { return }
-            owner.onSelect(destination)
+                  node.value.destination != nil else { return }
+            owner.onSelect(node.value)
         }
     }
 }

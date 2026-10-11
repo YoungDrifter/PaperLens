@@ -19,4 +19,8 @@ struct DocumentViewState: Codable, Equatable {
     /// Exact scroll point within the page, in PDF page space. `nil` means
     /// page-level only (restore the page, but at its top).
     var scrollPoint: CGPoint?
+    // Optional fields preserve compatibility with reading history saved by older builds.
+    var displayModeRawValue: Int? = nil
+    var sidebarVisible: Bool? = nil
+    var sidebarModeRawValue: String? = nil
 }
