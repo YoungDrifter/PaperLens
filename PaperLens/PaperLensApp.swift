@@ -438,7 +438,9 @@ struct PaperLensApp: App {
     @ViewBuilder
     private var tabMenuContent: some View {
         Button("Recent Files…") {
-            TabSwitcherController.shared.toggle(forWindow: NSApp.keyWindow, hostTabManager: focusedTabManager)
+            // The focused window's history button owns its popover, so the command
+            // only asks that button to toggle it.
+            NotificationCenter.default.post(name: .paperLensToggleRecentFiles, object: focusedTabManager)
         }
         .keyboardShortcut(for: "searchTabs")
         .disabled(focusedTabManager == nil)

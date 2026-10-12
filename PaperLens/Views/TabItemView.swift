@@ -16,7 +16,10 @@ struct TabItemView: View {
                 .frame(width: DesignTokens.tabCloseButtonSize, height: DesignTokens.tabCloseButtonSize)
                 .opacity(isHovering ? 1 : 0)
             HStack(spacing: 5) {
-                if isDirty { Circle().fill(.secondary).frame(width: 6, height: 6) }
+                if isDirty {
+                    Circle().fill(.secondary)
+                        .frame(width: DesignTokens.tabDirtyIndicatorSize, height: DesignTokens.tabDirtyIndicatorSize)
+                }
                 Text(tab.displayTitle)
                     .font(.system(size: 13, weight: isActive ? .medium : .regular))
                     .lineLimit(1).truncationMode(.middle)
@@ -24,10 +27,19 @@ struct TabItemView: View {
             Color.clear.frame(width: DesignTokens.tabCloseButtonSize, height: DesignTokens.tabCloseButtonSize)
         }
         .padding(.horizontal, DesignTokens.spacingSM)
-        .frame(height: 28)
+        .frame(height: DesignTokens.tabHeight)
         .frame(width: width)
-        .background(Capsule().fill(isActive ? Color.white : Color.black.opacity(isHovering ? 0.04 : 0)))
-        .overlay { Capsule().strokeBorder(Color.black.opacity(isActive ? 0.10 : 0), lineWidth: 0.7) }
+        // Capsule, like QuillTeX's file tabs. Only the drawing changes: the pill
+        // fills the same frame the tab bar reports, so the frame-based click and
+        // drag handling is untouched.
+        .background(Capsule().fill(isActive ? DesignTokens.tabActiveFill
+                                            : Color.black.opacity(isHovering ? DesignTokens.tabHoverOpacity : 0)))
+        .overlay {
+            Capsule().strokeBorder(Color.black.opacity(isActive ? DesignTokens.tabStrokeOpacity : 0),
+                                   lineWidth: DesignTokens.tabStrokeWidth)
+        }
+        .shadow(color: .black.opacity(isActive ? DesignTokens.tabActiveShadowOpacity : 0),
+                radius: DesignTokens.tabShadowRadius, y: DesignTokens.tabShadowY)
         .contentShape(Rectangle())
     }
 }

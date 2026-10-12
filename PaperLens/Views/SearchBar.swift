@@ -23,7 +23,7 @@ struct SearchBar: View {
             TextField("Search", text: $searchManager.searchQuery)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
-                .frame(width: DesignTokens.searchBarWidth)
+                .frame(minWidth: 80, idealWidth: DesignTokens.searchBarWidth, maxWidth: DesignTokens.searchBarWidth)
                 .focused($isSearchFieldFocused)
                 .onSubmit {
                     handleSearchSubmit()
@@ -50,10 +50,10 @@ struct SearchBar: View {
                 } label: {
                     Image(systemName: "chevron.up")
                         .font(.system(size: 12, weight: .medium))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 28, height: 28).contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .disabled(!searchManager.hasResults)
+                .buttonStyle(ChromeButtonStyle()).modifier(ChromeMenuHoverFeedback())
+                .disabled(!searchManager.hasResults).help("Previous Result").accessibilityLabel("Previous Result")
 
                 Button {
                     pdfManager.pushNavigationState()
@@ -61,10 +61,10 @@ struct SearchBar: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 12, weight: .medium))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 28, height: 28).contentShape(Circle())
                 }
-                .buttonStyle(.plain)
-                .disabled(!searchManager.hasResults)
+                .buttonStyle(ChromeButtonStyle()).modifier(ChromeMenuHoverFeedback())
+                .disabled(!searchManager.hasResults).help("Next Result").accessibilityLabel("Next Result")
             } else if !searchManager.searchQuery.isEmpty && !searchManager.hasResults {
                 Text("No results")
                     .font(.system(size: 12))
@@ -78,14 +78,14 @@ struct SearchBar: View {
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 12, weight: .medium))
-                    .frame(width: 20, height: 20)
+                    .frame(width: 28, height: 28).contentShape(Circle())
             }
-            .buttonStyle(.plain)
-            .keyboardShortcut(.cancelAction)
+            .buttonStyle(ChromeButtonStyle()).modifier(ChromeMenuHoverFeedback())
+            .keyboardShortcut(.cancelAction).help("Close Search").accessibilityLabel("Close Search")
         }
-        .padding(.horizontal, DesignTokens.spacingSM)
-        .padding(.vertical, DesignTokens.spacingXS)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+        .padding(12)
+        .modifier(PaperLensPanelSurface())
+        .padding(.horizontal, 16)
         .onAppear {
             focusSearchField()
         }

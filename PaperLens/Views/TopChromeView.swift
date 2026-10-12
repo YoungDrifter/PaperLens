@@ -21,11 +21,13 @@ struct TopChromeView: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            titleRow
-            Divider()
-        }
-        .background(DesignTokens.chromeSurface)
+        ChromeHostingContainer(content:
+            VStack(spacing: 0) {
+                titleRow
+                Divider()
+            }
+            .background(DesignTokens.chromeSurface)
+        ).frame(height: Self.height + 1)
     }
 
     private var titleRow: some View {
@@ -37,17 +39,21 @@ struct TopChromeView: View {
                 ChromeButton("sidebar.left", help: "Toggle Sidebar", action: tabManager.toggleSidebar)
                     .disabled(tabManager.activePDFManager?.hasDocument != true)
                 HStack(spacing: 2) {
-                    ChromeButton("macwindow.badge.plus", help: "New Tab", glass: false, size: 32) { tabManager.createNewTab() }
-                    ChromeButton("rectangle.topthird.inset.filled", help: tabManager.isTabBarVisible ? "Hide Tab Bar" : "Show Tab Bar",
-                                 glass: false, selected: tabManager.isTabBarVisible, size: 32, iconOffsetY: -2, action: tabManager.toggleTabBar)
+                    ChromeButton("plus", help: "New Tab", glass: false) { tabManager.createNewTab() }
+                    // Sits next to New Tab rather than with the history arrows:
+                    // both act on the tab itself, not on the reading position.
+                    ChromeButton("house", help: "Start Page", glass: false) { tabManager.closeActiveDocument() }
+                        .disabled(tabManager.activePDFManager?.hasDocument != true)
+                    ChromeButton("rectangle.topthird.inset", help: tabManager.isTabBarVisible ? "Hide Tab Bar" : "Show Tab Bar",
+                                 glass: false, selected: tabManager.isTabBarVisible, action: tabManager.toggleTabBar)
                         .accessibilityValue(tabManager.isTabBarVisible ? "Shown" : "Hidden")
                     Divider().frame(height: 14).padding(.horizontal, 2)
-                    ChromeButton("chevron.left", help: "Back", glass: false, size: 32) { tabManager.activePDFManager?.goBack() }
+                    ChromeButton("chevron.left", help: "Back", glass: false) { tabManager.activePDFManager?.goBack() }
                         .disabled(tabManager.activePDFManager?.canGoBack != true)
-                    ChromeButton("chevron.right", help: "Forward", glass: false, size: 32) { tabManager.activePDFManager?.goForward() }
+                    ChromeButton("chevron.right", help: "Forward", glass: false) { tabManager.activePDFManager?.goForward() }
                         .disabled(tabManager.activePDFManager?.canGoForward != true)
                 }
-                .padding(3).paperLensGlassCapsule()
+                .padding(.horizontal, DesignTokens.chromeGroupInset).paperLensGlassCapsule().chromeControlGroup()
                 ZStack {
                     Button { showingFileInfo.toggle() } label: {
                         HStack(spacing: 5) {
@@ -65,11 +71,15 @@ struct TopChromeView: View {
                             Image(systemName: "chevron.down").font(.system(size: 9)).foregroundStyle(.secondary)
                         }
                         .frame(maxWidth: titleWidth)
-                        .frame(height: 38)
+                        .frame(height: DesignTokens.chromeButtonSize)
+                        .padding(.horizontal, 10)
+                        .contentShape(Capsule())
                         .help(tabManager.activeTab?.displayTitle ?? "PaperLens")
                         .layoutPriority(-1)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ChromeButtonStyle())
+                    .modifier(ChromeMenuHoverFeedback())
+                    .chromeControlBoundary()
                     .onChange(of: tabManager.activeTabID) { _, _ in showingFileInfo = false }
                     .disabled(tabManager.activePDFManager?.documentURL == nil)
                     .popover(isPresented: $showingFileInfo) {
@@ -80,26 +90,28 @@ struct TopChromeView: View {
                 }
                 .frame(maxWidth: .infinity)
                 HStack(spacing: 4) {
-                    if tabManager.isToolbarExpanded, Self.expandedToolsWidth(windowWidth: geometry.size.width) >= 206, let runtime = tabManager.activeRuntime {
+                    if tabManager.isToolbarExpanded, Self.expandedToolsWidth(windowWidth: geometry.size.width) >= DocumentToolbar.minimumWidth, let runtime = tabManager.activeRuntime {
                         DocumentToolbar(pdfManager: runtime.pdfManager, annotationManager: runtime.annotationManager,
                                         commentManager: runtime.commentManager, bookmarkManager: runtime.bookmarkManager,
                                         availableWidth: Self.expandedToolsWidth(windowWidth: geometry.size.width))
                             .transition(.move(edge: .trailing).combined(with: .opacity))
                     }
-                    ChromeButton(tabManager.isToolbarExpanded ? "wrench.and.screwdriver.fill" : "wrench.and.screwdriver", help: "Show or Hide Tools", glass: false) {
-                        if Self.expandedToolsWidth(windowWidth: geometry.size.width) < 206 {
+                    ChromeButton("slider.horizontal.3", help: "Show or Hide Tools", glass: false, selected: Self.expandedToolsWidth(windowWidth: geometry.size.width) < DocumentToolbar.minimumWidth ? showingCompactTools : tabManager.isToolbarExpanded) {
+                        if Self.expandedToolsWidth(windowWidth: geometry.size.width) < DocumentToolbar.minimumWidth {
                             showingCompactTools.toggle()
                         } else { tabManager.isToolbarExpanded.toggle() }
                     }
                 }
                 .padding(.horizontal, 4)
-                .paperLensGlassCapsule()
+                .paperLensGlassCapsule().chromeControlGroup()
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: tabManager.isToolbarExpanded)
-                .popover(isPresented: $showingCompactTools, arrowEdge: .bottom) {
+                .popover(isPresented: $showingCompactTools) {
                     if let runtime = tabManager.activeRuntime {
-                        DocumentToolbar(pdfManager: runtime.pdfManager, annotationManager: runtime.annotationManager,
-                                        commentManager: runtime.commentManager, bookmarkManager: runtime.bookmarkManager)
-                            .fixedSize().padding(12).preferredColorScheme(.light)
+                        PopupActionList(title: "Document Tools", actions:
+                            DocumentToolbar(pdfManager: runtime.pdfManager, annotationManager: runtime.annotationManager,
+                                            commentManager: runtime.commentManager, bookmarkManager: runtime.bookmarkManager).moreActions,
+                                        onDismiss: { showingCompactTools = false })
+                            .disabled(!runtime.pdfManager.hasDocument)
                     }
                 }
                 pageControl(windowWidth: geometry.size.width)
@@ -108,7 +120,7 @@ struct TopChromeView: View {
                     ChromeButton("gearshape", help: "Settings", glass: false) { openSettings() }
                 }
                 .padding(.horizontal, 4)
-                .paperLensGlassCapsule()
+                .paperLensGlassCapsule().chromeControlGroup()
             }
             .padding(.horizontal, 8)
             .frame(width: geometry.size.width, height: Self.height)
@@ -127,10 +139,11 @@ struct TopChromeView: View {
                 .font(.system(size: 12, weight: .medium)).monospacedDigit()
                 .fixedSize(horizontal: true, vertical: false)
                 .frame(width: Self.pageControlWidth(windowWidth: windowWidth), height: DesignTokens.chromeButtonSize)
-                .paperLensGlassCapsule()
+                .paperLensGlassCapsule().chromeControlGroup()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ChromeButtonStyle())
         .modifier(ChromeMenuHoverFeedback())
+        .chromeControlBoundary()
         .disabled(total == 0).help("Go to Page")
         .accessibilityLabel("Page \(page) of \(total); Go to Page")
     }
@@ -138,9 +151,16 @@ struct TopChromeView: View {
         windowWidth >= 900 ? 128 : 76
     }
     static func expandedToolsWidth(windowWidth: CGFloat) -> CGFloat {
-        // Preserve room for tabs and fixed controls; additional tools extend left.
-        // Allow the complete toolbar to fit; Fit Width stays in compact layouts.
-        min(337, max(0, windowWidth - 594 - pageControlWidth(windowWidth: windowWidth)))
+        // Reserve native window controls, all fixed groups, the document title
+        // and inter-group spacing before allocating optional document tools.
+        let button = DesignTokens.chromeButtonSize
+        // New Tab, Tab Bar, Back, Forward, Start Page with the group's divider.
+        let navigation = 5 * button + 4 * 2 + 5 + 2 * DesignTokens.chromeGroupInset
+        let auxiliary = 2 * button + DesignTokens.chromeSpacing + 2 * DesignTokens.chromeGroupInset
+        let toolsToggle = button + 2 * DesignTokens.chromeGroupInset + DesignTokens.chromeSpacing
+        let fixed = trafficLightInset(isFullScreen: false) + button + navigation + auxiliary
+            + toolsToggle + pageControlWidth(windowWidth: windowWidth) + 100 + 16 + 6 * DesignTokens.chromeSpacing
+        return min(DocumentToolbar.fullWidth, max(0, windowWidth - fixed))
     }
 
 }
@@ -153,25 +173,23 @@ struct ChromeButton: View {
     let selected: Bool
     let size: CGFloat
     let iconOffsetY: CGFloat
-    @State private var hovering = false
     init(_ icon: String, help: String, glass: Bool = true, selected: Bool = false, size: CGFloat = DesignTokens.chromeButtonSize, iconOffsetY: CGFloat = 0, action: @escaping () -> Void) {
         self.icon = icon; self.help = help; self.glass = glass; self.selected = selected; self.size = size; self.iconOffsetY = iconOffsetY; self.action = action
     }
     var body: some View {
         Button(action: action) {
-            Group {
-                if glass { iconLabel.paperLensGlassCapsule() } else { iconLabel }
-            }
+            Image(systemName: icon)
+                .font(.system(size: DesignTokens.chromeIconSize, weight: .regular))
+                .symbolRenderingMode(.monochrome)
+                .offset(y: iconOffsetY)
+                .frame(width: size, height: size)
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain).help(help).accessibilityLabel(help)
-        .onHover { hovering = $0 }
-    }
-    private var iconLabel: some View {
-        Image(systemName: icon).foregroundStyle(Color.black).font(.system(size: DesignTokens.chromeIconSize))
-            .offset(y: iconOffsetY)
-            .frame(width: size, height: size)
-            .background(Capsule().fill(Color.black.opacity(selected ? 0.12 : (hovering ? DesignTokens.chromeHoverOpacity : 0))))
-            .contentShape(Capsule())
+        .buttonStyle(ChromeButtonStyle(selected: selected))
+        .modifier(ChromeMenuHoverFeedback())
+        .chromeControlBoundary()
+        .help(help).accessibilityLabel(help)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
 }
@@ -260,7 +278,7 @@ final class ChromeMenuHoverView: NSView {
     func refreshHover() {
         guard isControlEnabled, let window, !isHiddenOrHasHiddenAncestor, window.isKeyWindow, NSApp.isActive else { setHover(false); return }
         let point = convert(window.convertPoint(fromScreen: NSEvent.mouseLocation), from: nil)
-        setHover(!visibleRect.isEmpty && visibleRect.contains(point))
+        setHover(!visibleRect.isEmpty && visibleRect.contains(point) && ChromeHitShape.contains(point, in: bounds))
     }
     private func setHover(_ value: Bool) {
         // Replace the layer color, including clearing it. Returning early from draw()
@@ -335,7 +353,7 @@ private struct DocumentFileInfoPopover: View {
                 Button("Done", action: apply).keyboardShortcut(.defaultAction)
             }.gridCellColumns(2)
         }
-        .padding(18).frame(width: 380)
+        .frame(width: 348).paperLensPopoverContent()
         .onAppear {
             name = url.lastPathComponent
             tags = ((try? url.resourceValues(forKeys: [.tagNamesKey]).tagNames) ?? []).joined(separator: ", ")

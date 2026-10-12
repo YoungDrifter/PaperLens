@@ -48,8 +48,8 @@ extension View {
     ) -> some View {
         let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
 
-        self.background(Color.white, in: shape)
-            .overlay(shape.strokeBorder(Color.black.opacity(0.10), lineWidth: 0.7).allowsHitTesting(false))
+        self.background(DesignTokens.controlSurface, in: shape)
+            .overlay(shape.strokeBorder(DesignTokens.hairline, lineWidth: 0.7).allowsHitTesting(false))
     }
 
     func paperLensLiquidGlassPanel(
@@ -70,7 +70,7 @@ extension View {
             variant: variant,
             strokeOpacity: strokeOpacity
         )
-        .shadow(color: .black.opacity(DesignTokens.glassElevationShadowOpacity), radius: shadowRadius, y: shadowY)
+
     }
 }
 
@@ -247,12 +247,12 @@ struct ChromeGlassIcon: View {
     }
 }
 
-/// Consistent light capsule chrome. Native Liquid Glass on macOS 26+, with a
-/// material fallback on the older supported systems; labels keep crisp edges.
+/// Quiet, opaque control groups keep glyphs legible above the document.
 extension View {
     @ViewBuilder
     func paperLensGlassCapsule(selected: Bool = false) -> some View {
-        self.background(Color.white, in: Capsule())
-            .overlay(Capsule().strokeBorder(Color.black.opacity(selected ? 0.22 : 0.10), lineWidth: 0.7).allowsHitTesting(false))
+        self.background(DesignTokens.controlSurface, in: Capsule())
+            .overlay(Capsule().strokeBorder(Color.black.opacity(selected ? 0.18 : 0.075), lineWidth: 0.7).allowsHitTesting(false))
+            .shadow(color: .black.opacity(0.025), radius: 2, y: 1)
     }
 }

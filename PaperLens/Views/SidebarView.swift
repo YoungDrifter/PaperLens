@@ -31,8 +31,8 @@ struct SidebarView: View {
     var body: some View {
         VStack(spacing: 0) {
             SidebarHeaderView(mode: $mode)
-            Text(mode.title).font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 10)
+            Text(mode.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16).padding(.bottom, 12)
             switch mode {
             case .outline:
                 if items.isEmpty {
@@ -54,7 +54,7 @@ struct SidebarView: View {
             case .comments: CommentsSidebar(commentManager: commentManager, onClose: {})
             }
         }
-        .background(LinearGradient(colors: [DesignTokens.sidebarTop, DesignTokens.sidebarBottom], startPoint: .top, endPoint: .bottom))
+        .background(DesignTokens.subtleSurface)
     }
 
     // MARK: - Bookmarks View
@@ -74,7 +74,7 @@ struct SidebarView: View {
                     }
                 }
             }
-            .padding(.horizontal, DesignTokens.spacingMD + DesignTokens.spacingSM)
+            .padding(.horizontal, DesignTokens.spacingSM)
             .padding(.bottom, DesignTokens.spacingMD)
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -91,7 +91,7 @@ struct SidebarView: View {
                 }
             } label: {
                 HStack {
-                    Image(systemName: "bookmark.fill")
+                    Image(systemName: "bookmark")
                         .font(.system(size: 10))
                         .foregroundStyle(DesignTokens.sidebarSecondaryText)
 
@@ -136,6 +136,10 @@ struct SidebarView: View {
                 (hovering ? NSCursor.pointingHand : NSCursor.arrow).set()
             }
         }
+        .font(.system(size: 12))
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(DesignTokens.controlSurface, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.bottom, 4)
     }
 
     // MARK: - Bookmark Editing

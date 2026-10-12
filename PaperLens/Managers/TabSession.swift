@@ -133,6 +133,21 @@ final class TabSession {
         undoManager.removeAllActions()
     }
 
+    /// Unloads the document but keeps the session alive and wired, so the tab
+    /// stays warm and its managers keep serving the live views. Used by the
+    /// start-page command, where the tab (not the document) is what remains;
+    /// `cleanup()` is only for closing the tab.
+    func unloadDocument() {
+        pdfManager.closeDocument()
+        searchManager.clearSearch()
+        clearSearchSnapshot()
+        commentManager.clearComments()
+        bookmarkManager.clearBookmarks()
+        undoManager.removeAllActions()
+        uiState = TabUIState()
+        pendingUnlock = nil
+    }
+
     // MARK: - View Snapshot (tab activation)
 
     /// Captures the live managers into `viewSnapshot` when the tab is switched

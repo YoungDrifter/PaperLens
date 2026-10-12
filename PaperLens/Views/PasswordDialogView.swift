@@ -56,8 +56,8 @@ struct PasswordDialogView: View {
                 .disabled(password.isEmpty)
             }
         }
-        .padding(DesignTokens.spacingLG)
         .frame(width: DesignTokens.dialogWidth + 20)
+        .modifier(PaperLensSheetContent())
         .onAppear {
             isPasswordFocused = true
         }

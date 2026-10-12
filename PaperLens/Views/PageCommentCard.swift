@@ -1,6 +1,7 @@
 import AppKit
 import PDFKit
 import QuartzCore
+import SwiftUI
 
 /// Native page overlays use PDFView's coordinate conversion so rotation and zoom
 /// share the same geometry as the annotations written into the file.
@@ -500,31 +501,40 @@ final class PageCommentCard: NSView, NSTextViewDelegate {
         pdfView?.syncCommentOverlays()
         pdfView?.window?.makeFirstResponder(pdfView)
     }
+    /// The ⋯ menu is an app-owned popover now, so it carries the same rows as
+    /// every other popup: colours with the current one ticked, then the two
+    /// non-colour commands.
     @objc private func showMenu() {
-        let menu = NSMenu()
-        for (index, preset) in SettingsManager.shared.commentPresets.enumerated() {
-            let item = NSMenuItem(title: preset.name, action: #selector(colorAction(_:)), keyEquivalent: "")
-            item.tag = index
-            item.target = self
-            menu.addItem(item)
+        let current = manager?.commentColor
+        var actions = SettingsManager.shared.commentPresets.map { preset in
+            PopupAction(title: preset.name, swatch: preset.color,
+                        selected: current.map { preset.color.isEqual(to: $0) } ?? false) { [weak self] in
+                guard let self else { return }
+                self.manager?.chooseCommentColor(preset.color)
+                self.pdfView?.syncCommentOverlays()
+            }
         }
-        menu.addItem(.separator())
-        let automatic = NSMenuItem(title: "Restore Automatic Connection", action: #selector(restoreConnection), keyEquivalent: "")
-        automatic.target = self
-        automatic.isEnabled = (manager?.annotation(for: commentID) as? PageCommentAnnotation)?.geometry.attachment != nil
-        menu.addItem(automatic)
-        menu.addItem(.separator())
-        let delete = NSMenuItem(title: "Delete Comment", action: #selector(deleteAction), keyEquivalent: "")
-        delete.target = self
-        menu.addItem(delete)
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: more.bounds.maxY), in: more)
+        let automatic = PopupAction(title: "Restore Automatic Connection", symbol: "arrow.uturn.backward",
+                                    enabled: hasAutomaticConnection, separatorBefore: true) { [weak self] in
+            self?.restoreConnection()
+        }
+        let delete = PopupAction(title: "Delete Comment", symbol: "trash", destructive: true,
+                                 separatorBefore: true) { [weak self] in
+            self?.deleteAction()
+        }
+        actions.append(automatic)
+        actions.append(delete)
+        PaperLensPopoverPresenter.present(
+            PopupActionList(title: "Comment", actions: actions, width: 220,
+                            onDismiss: { PaperLensPopoverPresenter.dismiss() }),
+            from: more)
     }
-    @objc private func colorAction(_ sender: NSMenuItem) {
-        let presets = SettingsManager.shared.commentPresets
-        guard presets.indices.contains(sender.tag) else { return }
-        manager?.chooseCommentColor(presets[sender.tag].color)
-        pdfView?.syncCommentOverlays()
+
+    /// Only an automatically attached comment can go back to being automatic.
+    private var hasAutomaticConnection: Bool {
+        (manager?.annotation(for: commentID) as? PageCommentAnnotation)?.geometry.attachment != nil
     }
+
     @objc private func restoreConnection() {
         manager?.setConnectionPoint(commentID, point: nil)
         pdfView?.syncCommentOverlays()

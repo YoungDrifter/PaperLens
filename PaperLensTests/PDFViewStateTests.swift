@@ -16,6 +16,7 @@ import Testing
 @testable import PaperLens
 
 @MainActor
+@Suite(.serialized)
 struct PDFViewStateTests {
 
     // MARK: - scalesDiffer (the projector's relative-tolerance comparison)
@@ -144,12 +145,13 @@ struct PDFViewStateTests {
         manager.currentPage = page
         manager.currentPageIndex = pageIndex
         coordinator.project(view, documentDidChange: false)
-        try await Task.sleep(for: .milliseconds(400))
+        await waitUntil { spreadIsCentered(page, in: view) }
         let initialSpread = PDFViewWrapper.fittedSpreadRect(page, in: view)
         #expect(abs(initialSpread.midX - view.bounds.midX) < 2, "mode \(mode.rawValue), page \(pageIndex), live page \(document.index(for: view.currentPage ?? page)) must fit without a second click")
         #expect(initialSpread.width <= view.bounds.width + 2)
         for fit in [FitEngine.Mode.page, .width] {
             view.navigateToReadingDestination(PDFDestination(page: page, at: CGPoint(x: 30, y: 100)), outlineItemID: "fit-page")
+            await waitUntil { spreadIsCenteredOrWiderThanViewport(page, in: view) }
             let navigatedSpread = PDFViewWrapper.fittedSpreadRect(page, in: view)
             if navigatedSpread.width <= view.bounds.width {
                 #expect(abs(navigatedSpread.midX - view.bounds.midX) < 2)
@@ -159,7 +161,7 @@ struct PDFViewStateTests {
             }
             manager.requestFitOnce(mode: fit)
             coordinator.project(view, documentDidChange: false)
-            try await Task.sleep(for: .milliseconds(400))
+            await waitUntil { spreadIsCentered(page, in: view) }
             let rect = PDFViewWrapper.fittedSpreadRect(page, in: view)
             #expect(abs(rect.midX - view.bounds.midX) < 2, "the spread must center after one fit")
             #expect(rect.width <= view.bounds.width + 2)
@@ -403,6 +405,27 @@ struct PDFViewStateTests {
     }
 
     // MARK: - Helpers
+
+    /// PDFKit applies fits and layout asynchronously. A fixed sleep is not long
+    /// enough while parallel suites keep the main actor busy, so wait for the
+    /// expected geometry; the assertions still fail if it never arrives.
+    private func waitUntil(timeout: Duration = .seconds(3), _ settled: () -> Bool) async {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if settled() { return }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    private func spreadIsCentered(_ page: PDFPage, in view: PDFView) -> Bool {
+        let spread = PDFViewWrapper.fittedSpreadRect(page, in: view)
+        return abs(spread.midX - view.bounds.midX) < 2
+    }
+
+    private func spreadIsCenteredOrWiderThanViewport(_ page: PDFPage, in view: PDFView) -> Bool {
+        let spread = PDFViewWrapper.fittedSpreadRect(page, in: view)
+        return spread.width > view.bounds.width || abs(spread.midX - view.bounds.midX) < 2
+    }
 
     private func makeDocument(pageCount: Int, size: NSSize = NSSize(width: 32, height: 32)) -> PDFDocument {
         let document = PDFDocument()

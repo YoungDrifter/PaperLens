@@ -5,6 +5,7 @@ import Testing
 @testable import PaperLens
 
 @MainActor
+@Suite(.serialized)
 struct PreviewLayoutTests {
     @Test func sidebarStateIsExclusiveAndTravelsWithTab() throws {
         let source = TabManager()
@@ -139,7 +140,7 @@ struct PreviewLayoutTests {
         #expect(TopChromeView.trafficLightInset(isFullScreen: true) == 0)
         #expect(TopChromeView.trafficLightInset(isFullScreen: false) == 78)
         #expect(TopChromeView.height == 54)
-        #expect(TopChromeView.expandedToolsWidth(windowWidth: 900) == 178)
+        #expect(DocumentToolbar.controlLevel(availableWidth: TopChromeView.expandedToolsWidth(windowWidth: 900)) == 0)
         // The top chrome must actually allocate enough room for every control.
         #expect(DocumentToolbar.controlLevel(availableWidth: TopChromeView.expandedToolsWidth(windowWidth: 1200)) == 2)
     }
@@ -301,17 +302,19 @@ struct PreviewLayoutTests {
         #expect(TabBarMouseNSView.scrollTabStrip(from: mouse, delta: 10000, precise: true))
         #expect(abs(scroll.contentView.bounds.minX) < 1)
         manager.selectTab(last)
-        try await Task.sleep(for: .milliseconds(150))
+        // Revealing the selected tab is an AppKit layout pass rather than a
+        // synchronous scroll; wait for it instead of racing a fixed sleep.
+        await waitUntil { (currentTabStripScroll(in: content)?.contentView.bounds.minX ?? 0) > 0 }
         let activeMouse = try #require(descendants(content).compactMap { $0 as? TabBarMouseNSView }.first)
         scroll = try #require(TabBarMouseNSView.tabScrollView(overlapping: activeMouse))
         let selectedOffset = scroll.contentView.bounds.minX
         #expect(selectedOffset > 0)
         window.setContentSize(NSSize(width: 720, height: 600))
         content.layoutSubtreeIfNeeded()
-        try await Task.sleep(for: .milliseconds(150))
+        await waitUntil { (currentTabStripScroll(in: content)?.contentView.bounds.minX ?? -1) > selectedOffset }
         #expect(scroll.contentView.bounds.minX > selectedOffset)
         manager.selectTab(first)
-        try await Task.sleep(for: .milliseconds(150))
+        await waitUntil { (currentTabStripScroll(in: content)?.contentView.bounds.minX ?? .greatestFiniteMagnitude) < 10 }
         let firstMouse = try #require(descendants(content).compactMap { $0 as? TabBarMouseNSView }.first)
         scroll = try #require(TabBarMouseNSView.tabScrollView(overlapping: firstMouse))
         #expect(scroll.contentView.bounds.minX < 10)
@@ -386,7 +389,7 @@ struct PreviewLayoutTests {
                 for row in 0..<outline.numberOfRows {
                     _ = outline.view(atColumn: 0, row: row, makeIfNecessary: true)
                 }
-                try await Task.sleep(for: .milliseconds(300))
+                await waitUntil { outlineRowsAreTallEnough(outline) }
                 host.layoutSubtreeIfNeeded()
                 for row in 0..<outline.numberOfRows {
                     let cell = try #require(outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? OutlineCell)
@@ -443,6 +446,39 @@ struct PreviewLayoutTests {
         #expect(descendants(content).allSatisfy { !($0 is NSSplitView) },
                 "settings layout must not build an NSSplitView")
         #expect(content.frame.width >= 640)
+    }
+
+    // MARK: - Helpers
+
+    /// AppKit settles these layouts on a later main-run-loop pass. A fixed
+    /// sleep is not enough while parallel suites keep the main actor busy, so
+    /// wait for the expected geometry; the assertions still fail if it never
+    /// arrives.
+    private func waitUntil(timeout: Duration = .seconds(5), _ settled: () -> Bool) async {
+        let deadline = ContinuousClock.now.advanced(by: timeout)
+        while ContinuousClock.now < deadline {
+            if settled() { return }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// The outline records the rendered title width and re-measures wrapped row
+    /// heights on the next main-loop cycle.
+    private func outlineRowsAreTallEnough(_ outline: OutlineTable) -> Bool {
+        for row in 0..<outline.numberOfRows {
+            guard let cell = outline.view(atColumn: 0, row: row, makeIfNecessary: true) as? OutlineCell else { return false }
+            cell.layoutSubtreeIfNeeded()
+            let neededHeight = cell.title.sizeThatFits(NSSize(width: cell.title.frame.width, height: .greatestFiniteMagnitude)).height
+            if cell.bounds.height < ceil(neededHeight) + 12 { return false }
+            if outline.rect(ofRow: row).height < ceil(neededHeight) + 12 { return false }
+        }
+        return true
+    }
+
+    private func currentTabStripScroll(in content: NSView) -> NSScrollView? {
+        func descendants(_ view: NSView) -> [NSView] { [view] + view.subviews.flatMap(descendants) }
+        guard let mouse = descendants(content).compactMap({ $0 as? TabBarMouseNSView }).first else { return nil }
+        return TabBarMouseNSView.tabScrollView(overlapping: mouse)
     }
 }
 

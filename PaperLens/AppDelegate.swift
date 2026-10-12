@@ -222,6 +222,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// build a fresh window, otherwise the app sits running with no UI.
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !flag else { return true }
+        // SwiftUI installs the window content builder in its `onAppear`. A reopen
+        // can arrive first — relaunching an already-running app, or a slow launch
+        // under load — and trapping there crashed Debug builds while leaving
+        // Release builds with no window at all. Let SwiftUI restore its own
+        // window instead.
+        guard windowContentBuilder != nil else { return true }
         createNewWindow(with: TabManager())
         // We handled this reopen. Returning true also lets SwiftUI restore its
         // closed WindowGroup window, alongside the window we just created.

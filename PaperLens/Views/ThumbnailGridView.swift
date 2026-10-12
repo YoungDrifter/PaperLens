@@ -493,6 +493,7 @@ private struct ThumbnailCellView: View {
 
     @State private var thumbnailImage: NSImage?
     @State private var loadedThumbnailKey: String?
+    @State private var showingPageMenu = false
 
     private var isBookmarked: Bool { bookmarkManager.isBookmarked(pageIndex) }
 
@@ -516,7 +517,11 @@ private struct ThumbnailCellView: View {
             pdfManager.pushNavigationState()
             pdfManager.goToPage(pageIndex)
         }
-        .contextMenu { contextMenu }
+        .onRightClick { showingPageMenu = true }
+        .popover(isPresented: $showingPageMenu) {
+            PopupActionList(title: "Page \(displayNumber)", actions: pageActions,
+                            onDismiss: { showingPageMenu = false })
+        }
         .task(id: thumbnailLoadID(revision: thumbnailRevision)) {
             await loadThumbnail(revision: thumbnailRevision)
         }
@@ -599,39 +604,30 @@ private struct ThumbnailCellView: View {
             .padding(DesignTokens.spacingXS)
     }
 
-    // MARK: - Context Menu
+    // MARK: - Page Menu
 
-    @ViewBuilder
-    private var contextMenu: some View {
-        Button { pdfManager.copyPage(at: pageIndex) } label: {
-            Label("Copy Page", systemImage: "doc.on.doc")
-        }
-        Button { _ = pdfManager.pastePage(after: pageIndex) } label: {
-            Label("Paste Page", systemImage: "doc.on.clipboard")
-        }
-        .disabled(!pdfManager.canPaste)
-        Divider()
-        Button { rotatePage(clockwise: true) } label: {
-            Label("Rotate Clockwise", systemImage: "rotate.right")
-        }
-        Button { rotatePage(clockwise: false) } label: {
-            Label("Rotate Counter-Clockwise", systemImage: "rotate.left")
-        }
-        Divider()
-        Button { pdfManager.duplicatePage(at: pageIndex) } label: {
-            Label("Duplicate Page", systemImage: "doc.badge.plus")
-        }
-        Divider()
-        Button(role: .destructive) { pdfManager.deletePage(at: pageIndex) } label: {
-            Label("Delete Page", systemImage: "trash")
-        }
-        .disabled(pdfManager.pageCount <= 1)
-        Divider()
-
-        Button { bookmarkManager.toggleBookmark(at: pageIndex) } label: {
-            Label(isBookmarked ? "Remove Bookmark" : "Add Bookmark",
-                  systemImage: isBookmarked ? "bookmark.slash" : "bookmark")
-        }
+    /// The page commands that used to live in the system context menu, in the
+    /// shared popup row style.
+    private var pageActions: [PopupAction] {
+        [
+            PopupAction(title: "Copy Page", symbol: "doc.on.doc") { pdfManager.copyPage(at: pageIndex) },
+            PopupAction(title: "Paste Page", symbol: "doc.on.clipboard", enabled: pdfManager.canPaste) {
+                _ = pdfManager.pastePage(after: pageIndex)
+            },
+            PopupAction(title: "Rotate Clockwise", symbol: "rotate.right", separatorBefore: true) {
+                rotatePage(clockwise: true)
+            },
+            PopupAction(title: "Rotate Counter-Clockwise", symbol: "rotate.left") { rotatePage(clockwise: false) },
+            PopupAction(title: "Duplicate Page", symbol: "doc.badge.plus", separatorBefore: true) {
+                pdfManager.duplicatePage(at: pageIndex)
+            },
+            PopupAction(title: "Delete Page", symbol: "trash", enabled: pdfManager.pageCount > 1,
+                        destructive: true, separatorBefore: true) { pdfManager.deletePage(at: pageIndex) },
+            PopupAction(title: isBookmarked ? "Remove Bookmark" : "Add Bookmark",
+                        symbol: isBookmarked ? "bookmark.slash" : "bookmark", separatorBefore: true) {
+                bookmarkManager.toggleBookmark(at: pageIndex)
+            }
+        ]
     }
 
     private func rotatePage(clockwise: Bool) {

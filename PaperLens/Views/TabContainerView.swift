@@ -101,7 +101,6 @@ struct TabContainerView: View {
             }
         }
         .onAppear {
-            TabSwitcherController.shared.recentFilesManager = recentFilesManager
             tabManager.documentOpenedHandler = { [recentFilesManager] url, isSecurityScoped in
                 recentFilesManager.addRecentFile(url, isSecurityScoped: isSecurityScoped)
             }

@@ -4,6 +4,8 @@ import SwiftUI
 struct CommentsSidebar: View {
     @Bindable var commentManager: CommentManager
     let onClose: () -> Void
+    /// Which row's ⋯ popover is open; the rows share one binding.
+    @State private var showingMenuID: UUID?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -28,23 +30,35 @@ struct CommentsSidebar: View {
                                 Button { commentManager.selectComment(comment.id) } label: {
                                     Image(systemName: "square.and.pencil")
                                 }.buttonStyle(.plain).help("Edit on page")
-                                Menu {
-                                    Button("Edit on Page") { commentManager.selectComment(comment.id) }
-                                    Button("Delete", role: .destructive) { commentManager.deleteComment(comment.id) }
-                                } label: { Image(systemName: "ellipsis") }
-                                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                                Button { showingMenuID = comment.id } label: {
+                                    Image(systemName: "ellipsis")
+                                }
+                                .buttonStyle(.plain)
+                                .help("More")
+                                .popover(isPresented: Binding(get: { showingMenuID == comment.id },
+                                                              set: { if !$0 { showingMenuID = nil } })) {
+                                    PopupActionList(title: "Comment", actions: [
+                                        PopupAction(title: "Edit on Page", symbol: "square.and.pencil") {
+                                            commentManager.selectComment(comment.id)
+                                        },
+                                        PopupAction(title: "Delete", symbol: "trash", destructive: true) {
+                                            commentManager.deleteComment(comment.id)
+                                        }
+                                    ], width: 220, onDismiss: { showingMenuID = nil })
+                                }
                             }
                             Button { commentManager.selectComment(comment.id) } label: {
                                 Text(comment.text.isEmpty ? "Add a comment…" : comment.text)
-                                    .font(.system(size: 12))
+                                    .font(.system(size: 13))
                                     .foregroundStyle(comment.text.isEmpty ? .secondary : .primary)
                                     .fixedSize(horizontal: false, vertical: true).frame(maxWidth: .infinity, alignment: .leading)
                             }.buttonStyle(.plain)
                         }
                         .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(
-                            commentManager.selectedCommentID == comment.id ? Color.black.opacity(0.35) : Color.black.opacity(0.10), lineWidth: 1))
+                        .background(RoundedRectangle(cornerRadius: DesignTokens.panelCornerRadius).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: DesignTokens.panelCornerRadius).stroke(
+                            commentManager.selectedCommentID == comment.id ? Color.black.opacity(0.25) : DesignTokens.hairline, lineWidth: 1))
+                        .shadow(color: .black.opacity(0.025), radius: 3, y: 1)
                         .id(comment.id)
                     }
                     if let message = commentManager.overflowMessage {

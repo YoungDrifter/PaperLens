@@ -178,6 +178,7 @@ extension WindowChromeController {
     /// from SwiftUI re-renders) no-op. The controller is retained as an
     /// associated object so it lives exactly as long as the window does.
     static func installIfNeeded(on window: NSWindow) -> WindowChromeController {
+        ChromeTitlebarDoubleClickFilter.install()
         if let existing = objc_getAssociatedObject(window, &controllerKey) as? WindowChromeController {
             return existing
         }

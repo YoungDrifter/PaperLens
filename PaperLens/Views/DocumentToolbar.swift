@@ -7,6 +7,7 @@
 //
 
 import SwiftUI
+import PDFKit
 
 struct DocumentToolbar: View {
     @Bindable var pdfManager: PDFManager
@@ -14,6 +15,10 @@ struct DocumentToolbar: View {
     @Bindable var commentManager: CommentManager
     @Bindable var bookmarkManager: BookmarkManager
     var availableWidth: CGFloat = 400
+    @State private var showingReadingModes = false
+    @State private var showingMore = false
+    @State private var showingHighlightMenu = false
+    @State private var showingCommentMenu = false
     @State private var settingsManager = SettingsManager.shared
 
     var body: some View {
@@ -22,9 +27,18 @@ struct DocumentToolbar: View {
             .frame(height: DesignTokens.chromeButtonSize)
     }
 
+    static let minimumWidth = width(buttonCount: 5, divider: false)
+    static let intermediateWidth = width(buttonCount: 7, divider: true)
+    static let fullWidth = width(buttonCount: 8, divider: true)
+    private static func width(buttonCount: Int, divider: Bool) -> CGFloat {
+        CGFloat(buttonCount) * DesignTokens.chromeButtonSize
+            + CGFloat(buttonCount - 1 + (divider ? 1 : 0)) * DesignTokens.chromeSpacing
+            + (divider ? 1 : 0)
+    }
+
     static func controlLevel(availableWidth: CGFloat) -> Int {
-        if availableWidth >= 337 { return 2 }
-        if availableWidth >= 295 { return 1 }
+        if availableWidth >= fullWidth { return 2 }
+        if availableWidth >= intermediateWidth { return 1 }
         return 0
     }
 
@@ -39,56 +53,63 @@ struct DocumentToolbar: View {
             }
             toolbarButton(icon: "arrow.left.and.right", help: "Fit Width", action: { pdfManager.requestFitOnce(mode: .width) }, disabled: !pdfManager.hasDocument)
             if level >= 1 { Divider().frame(height: 20) }
-            Menu { PageDisplayModeMenuItems(pdfManager: pdfManager) } label: {
-                Image(systemName: "book")
-                    .font(.system(size: DesignTokens.chromeIconSize))
-                    .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
+            ChromeButton("rectangle.split.2x1", help: "Reading Mode", glass: false, selected: showingReadingModes) {
+                showingReadingModes.toggle()
             }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-            .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
-            .modifier(ChromeMenuHoverFeedback())
-            .help("Reading Mode").accessibilityLabel("Reading Mode")
             .accessibilityValue(pdfManager.displayMode.menuTitle)
             .disabled(!pdfManager.hasDocument)
+            .popover(isPresented: $showingReadingModes) {
+                PopupActionList(title: "Reading Mode", actions: readingActions, onDismiss: { showingReadingModes = false })
+            }
             annotationTool(icon: "highlighter", title: "Highlight", mode: .highlight)
-                .contextMenu { highlightColors }
+                .onRightClick { showingHighlightMenu = true }
+                .popover(isPresented: $showingHighlightMenu) {
+                    PopupActionList(title: "Highlight", actions: highlightActions, width: 220,
+                                    onDismiss: { showingHighlightMenu = false })
+                }
             annotationTool(icon: "text.bubble", title: "Add Comment", mode: .comment)
-                .contextMenu { commentColors }
-            Menu {
-                Group {
-                    Button("Previous Page") { pdfManager.previousPage() }.disabled(!pdfManager.canGoToPreviousPage)
-                    Button("Next Page") { pdfManager.nextPage() }.disabled(!pdfManager.canGoToNextPage)
-                    Button("Zoom Out") { pdfManager.zoomOut() }
-                    Button("Zoom In") { pdfManager.zoomIn() }
-                    Button("Fit Page") { pdfManager.requestFitOnce(mode: .page) }
-                    Button("Fit Width") { pdfManager.requestFitOnce(mode: .width) }
-                    Toggle("Auto-Scale", isOn: Binding(get: { pdfManager.isAutoScaling }, set: { _ in pdfManager.toggleAutoScale() }))
-                    Divider()
-                    // Page display: the same shared items the View menu shows.
-                    PageDisplayModeMenuItems(pdfManager: pdfManager)
-                    Divider()
-                    Button("Rotate Clockwise") { pdfManager.rotateClockwise() }
-                    // Two choices, not one flipping toggle: the mode in use is
-                    // dimmed, exactly like Tools → Select Mode / Pan Mode.
-                    Button("Select") { pdfManager.interactionMode = .select }
-                        .disabled(pdfManager.interactionMode == .select)
-                    Button("Pan") { pdfManager.interactionMode = .pan }
-                        .disabled(pdfManager.interactionMode == .pan)
-                    Divider()
-                    Toggle("Highlight", isOn: toolBinding(.highlight))
-                    Toggle("Add Comment", isOn: toolBinding(.comment))
-                    Button("Toggle Bookmark") { bookmarkManager.toggleBookmark(at: pdfManager.currentPageIndex) }
-                }.disabled(!pdfManager.hasDocument)
-            } label: { Image(systemName: "ellipsis.circle").font(.system(size: DesignTokens.chromeIconSize)).frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize) }
-            .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("More")
-            .frame(width: DesignTokens.chromeButtonSize, height: DesignTokens.chromeButtonSize)
-            .modifier(ChromeMenuHoverFeedback())
+                .onRightClick { showingCommentMenu = true }
+                .popover(isPresented: $showingCommentMenu) {
+                    PopupActionList(title: "Comment Color", actions: commentActions, width: 220,
+                                    onDismiss: { showingCommentMenu = false })
+                }
+            ChromeButton("ellipsis", help: "More", glass: false, selected: showingMore) { showingMore.toggle() }
+                .disabled(!pdfManager.hasDocument)
+                .popover(isPresented: $showingMore) {
+                    PopupActionList(title: "Document Tools", actions: moreActions, onDismiss: { showingMore = false })
+                }
         }
     }
 
-    private func toolBinding(_ mode: InteractionMode) -> Binding<Bool> {
-        Binding(get: { pdfManager.interactionMode == mode },
-                set: { pdfManager.interactionMode = $0 ? mode : .select })
+    private var readingActions: [PopupAction] {
+        PDFDisplayMode.menuChoices.enumerated().map { index, mode in
+            PopupAction(title: mode.menuTitle,
+                        symbol: ["rectangle", "rectangle.portrait.on.rectangle.portrait", "rectangle.split.2x1", "square.grid.2x2"][index],
+                        selected: pdfManager.displayMode == mode, enabled: pdfManager.hasDocument) {
+                pdfManager.displayMode = mode
+            }
+        }
+    }
+
+    var moreActions: [PopupAction] {
+        [
+            PopupAction(title: "Previous Page", symbol: "chevron.left", enabled: pdfManager.canGoToPreviousPage) { pdfManager.previousPage() },
+            PopupAction(title: "Next Page", symbol: "chevron.right", enabled: pdfManager.canGoToNextPage) { pdfManager.nextPage() },
+            PopupAction(title: "Zoom Out", symbol: "minus.magnifyingglass", separatorBefore: true) { pdfManager.zoomOut() },
+            PopupAction(title: "Zoom In", symbol: "plus.magnifyingglass") { pdfManager.zoomIn() },
+            PopupAction(title: "Fit Page", symbol: "arrow.down.forward.and.arrow.up.backward") { pdfManager.requestFitOnce(mode: .page) },
+            PopupAction(title: "Fit Width", symbol: "arrow.left.and.right") { pdfManager.requestFitOnce(mode: .width) },
+            PopupAction(title: "Auto-Scale", symbol: "arrow.up.left.and.arrow.down.right", selected: pdfManager.isAutoScaling) { pdfManager.toggleAutoScale() }
+        ] + readingActions.enumerated().map { index, item in
+            var row = item; row.separatorBefore = index == 0; return row
+        } + [
+            PopupAction(title: "Rotate Clockwise", symbol: "rotate.right", separatorBefore: true) { pdfManager.rotateClockwise() },
+            PopupAction(title: "Select", symbol: "cursorarrow", selected: pdfManager.interactionMode == .select, enabled: pdfManager.interactionMode != .select) { pdfManager.interactionMode = .select },
+            PopupAction(title: "Pan", symbol: "hand.draw", selected: pdfManager.interactionMode == .pan, enabled: pdfManager.interactionMode != .pan) { pdfManager.interactionMode = .pan },
+            PopupAction(title: "Highlight", symbol: "highlighter", selected: pdfManager.interactionMode == .highlight, separatorBefore: true) { pdfManager.toggleAnnotationTool(.highlight) },
+            PopupAction(title: "Add Comment", symbol: "text.bubble", selected: pdfManager.interactionMode == .comment) { pdfManager.toggleAnnotationTool(.comment) },
+            PopupAction(title: "Toggle Bookmark", symbol: "bookmark") { bookmarkManager.toggleBookmark(at: pdfManager.currentPageIndex) }
+        ]
     }
 
     private func annotationTool(icon: String, title: String, mode: InteractionMode) -> some View {
@@ -99,52 +120,36 @@ struct DocumentToolbar: View {
         .accessibilityValue(pdfManager.interactionMode == mode ? "Selected" : "Off")
     }
 
-    @ViewBuilder
-    private var highlightColors: some View {
-        ForEach(settingsManager.highlightPresets) { preset in
-            Toggle(isOn: Binding(
-                get: { annotationManager.selectionStyle == .highlight && preset.color.isEqual(to: annotationManager.highlightColor) },
-                set: { _ in
-                    annotationManager.highlightColor = preset.color
-                    annotationManager.selectionStyle = .highlight
-                    pdfManager.interactionMode = .highlight
-                }
-            )) { colorLabel(preset.name, color: preset.color) }
+    /// Highlight colours and markup styles, in the same rows as every other popup.
+    private var highlightActions: [PopupAction] {
+        var actions = settingsManager.highlightPresets.map { preset in
+            PopupAction(title: preset.name, swatch: preset.color,
+                        selected: annotationManager.selectionStyle == .highlight
+                            && preset.color.isEqual(to: annotationManager.highlightColor)) {
+                annotationManager.highlightColor = preset.color
+                annotationManager.selectionStyle = .highlight
+                pdfManager.interactionMode = .highlight
+            }
         }
-        Divider()
-        Toggle("Underline", isOn: markupBinding(.underline))
-        Toggle("Strikethrough", isOn: markupBinding(.strikethrough))
+        actions.append(PopupAction(title: "Underline", symbol: "underline",
+                                   selected: annotationManager.selectionStyle == .underline,
+                                   separatorBefore: true) { selectMarkup(.underline) })
+        actions.append(PopupAction(title: "Strikethrough", symbol: "strikethrough",
+                                   selected: annotationManager.selectionStyle == .strikethrough) { selectMarkup(.strikethrough) })
+        return actions
     }
 
-    private func markupBinding(_ style: SelectionMarkupStyle) -> Binding<Bool> {
-        Binding(get: { annotationManager.selectionStyle == style }, set: { _ in
-            annotationManager.selectionStyle = style
-            pdfManager.interactionMode = .highlight
-        })
+    private func selectMarkup(_ style: SelectionMarkupStyle) {
+        annotationManager.selectionStyle = style
+        pdfManager.interactionMode = .highlight
     }
 
-    private var commentColors: some View {
-        ForEach(settingsManager.commentPresets) { preset in
-            Toggle(isOn: Binding(
-                get: { preset.color.isEqual(to: commentManager.commentColor) },
-                set: { _ in commentManager.chooseCommentColor(preset.color) }
-            )) { colorLabel(preset.name, color: preset.color) }
-        }
-    }
-
-    private func colorLabel(_ name: String, color: NSColor) -> some View {
-        Label { Text(name) } icon: { Image(nsImage: colorSwatch(color)) }
-    }
-
-    private func colorSwatch(_ color: NSColor) -> NSImage {
-        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
-            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
-            color.withAlphaComponent(1).setFill()
-            circle.fill()
-            NSColor.black.withAlphaComponent(0.15).setStroke()
-            circle.lineWidth = 1
-            circle.stroke()
-            return true
+    private var commentActions: [PopupAction] {
+        settingsManager.commentPresets.map { preset in
+            PopupAction(title: preset.name, swatch: preset.color,
+                        selected: preset.color.isEqual(to: commentManager.commentColor)) {
+                commentManager.chooseCommentColor(preset.color)
+            }
         }
     }
 

@@ -16,11 +16,22 @@ struct DesignTokens {
     static let separator = NSColor.separatorColor
     static let viewerBackground = NSColor.white
 
-    static let chromeSurface = Color.white
-    static let sidebarTop = Color.white
-    static let sidebarBottom = Color.white
+    static let primaryInk = Color(white: 0.13)
+    static let secondaryInk = Color(white: 0.46)
+    static let subtleSurface = Color(white: 0.965)
+    static let controlSurface = Color(white: 0.985)
+    static let hairline = Color.black.opacity(0.085)
+    static let panelCornerRadius: CGFloat = 12
+    static let panelPadding: CGFloat = 16
+    static let selectedOpacity: Double = 0.10
+    static let pressedOpacity: Double = 0.14
+    static let chromeSpacing: CGFloat = 4
+    static let chromeGroupInset: CGFloat = 4
+    static let chromeSurface = Color(white: 0.99)
+    static let sidebarTop = subtleSurface
+    static let sidebarBottom = subtleSurface
     static let chromeButtonSize: CGFloat = 38
-    static let chromeIconSize: CGFloat = 19
+    static let chromeIconSize: CGFloat = 18
     static let chromeHoverOpacity: Double = 0.05
 
     // MARK: - Annotation Colors
@@ -54,6 +65,13 @@ struct DesignTokens {
     static let dialogWidth: CGFloat = 300
     static let textFieldWidth: CGFloat = 200
 
+    // MARK: - Welcome
+
+    /// The welcome card keeps this height and scrolls the rest of the history
+    /// inside it, so a full list never pushes the page around.
+    static let welcomeHistoryMaxHeight: CGFloat = 320
+    static let welcomeRecentRowHeight: CGFloat = 64
+
     // MARK: - Thumbnail Grid
 
     static let thumbnailHeight: CGFloat = 170
@@ -65,8 +83,8 @@ struct DesignTokens {
     static let thumbnailSelectedBorderWidth: CGFloat = 2
     static let thumbnailBorder = Color(white: 0.65)
     static let thumbnailSelectedBorder = Color(white: 0.3)
-    static let outlineSelection = NSColor(white: 0.86, alpha: 1)
-    static let outlineHover = NSColor(white: 0.95, alpha: 1)
+    static let outlineSelection = NSColor(white: 0.89, alpha: 1)
+    static let outlineHover = NSColor(white: 0.93, alpha: 1)
     static let outlineRowInset: CGFloat = 8
     static let outlineRowCornerRadius: CGFloat = 7
     static let outlinePageTrailingInset: CGFloat = 20
@@ -170,6 +188,19 @@ struct DesignTokens {
     static let tabBarLeftMargin: CGFloat = 80
     static let tabCloseButtonSize: CGFloat = 14
     static let tabDirtyIndicatorSize: CGFloat = 6
+
+    /// Tab pills are capsules, matching QuillTeX's file tabs: the active document
+    /// is a solid light capsule with a hairline edge and a very soft shadow, and
+    /// the other tabs stay transparent until the pointer reaches them. The pill is
+    /// drawn inside the same frame the tab bar reports, so click and drag
+    /// geometry is unaffected by the shape.
+    static let tabActiveFill = controlSurface
+    static let tabStrokeOpacity: Double = 0.10
+    static let tabStrokeWidth: CGFloat = 0.7
+    static let tabHoverOpacity: Double = 0.04
+    static let tabActiveShadowOpacity: Double = 0.035
+    static let tabShadowRadius: CGFloat = 2
+    static let tabShadowY: CGFloat = 1
 
     // MARK: - Timing (PDFKit workaround delays)
 

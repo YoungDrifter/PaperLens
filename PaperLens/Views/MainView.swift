@@ -23,6 +23,7 @@ struct MainView: View {
     @Bindable var tabManager: TabManager
     var onOpenFile: (URL, Bool, Bool) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var goToPageInput = ""
     @State private var goToPageError: String?
     @State private var isDragHovering = false
@@ -119,7 +120,7 @@ struct MainView: View {
             if isActive && tabManager.isTabBarVisible {
                 TabBarView(tabManager: tabManager)
                     .frame(height: TopChromeView.tabRowHeight)
-                    .background { Capsule().fill(Color.black.opacity(0.055)).padding(.horizontal, 8).padding(.vertical, 2) }
+                    .background(DesignTokens.subtleSurface)
                 Divider()
             }
             readerContent
@@ -178,7 +179,7 @@ struct MainView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: showingSearch)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: showingSearch)
     }
 
     private var dragHoverOverlay: some View {
@@ -189,7 +190,7 @@ struct MainView: View {
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.15), value: isDragHovering)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: isDragHovering)
     }
 
     // MARK: - Empty State
@@ -232,8 +233,8 @@ struct MainView: View {
                 .keyboardShortcut(.defaultAction)
             }
         }
-        .padding(DesignTokens.spacingLG)
         .frame(width: DesignTokens.dialogWidth)
+        .modifier(PaperLensSheetContent())
     }
 
     // MARK: - Actions

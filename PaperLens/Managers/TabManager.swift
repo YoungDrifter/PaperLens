@@ -405,6 +405,35 @@ final class TabManager {
         closeTab(id)
     }
 
+    /// Return the active tab to the start page by unloading its document, the
+    /// way `closeTab` does, but keeping the tab itself so the window and the
+    /// other tabs stay exactly where they are. Unsaved changes are confirmed
+    /// first; the reading position is persisted before the document closes.
+    ///
+    /// The session is unloaded in place rather than replaced: the tab must stay
+    /// in `renderedTabIDs` (an empty warm set collapses the window's content
+    /// stack) and the live `PDFViewWrapper` coordinator holds these manager
+    /// instances.
+    func closeActiveDocument() {
+        guard let id = activeTabID,
+              let session = sessions[id],
+              session.pdfManager.hasDocument else { return }
+
+        if session.pdfManager.isDirty, !confirmClose(tabID: id, pdfManager: session.pdfManager) {
+            return
+        }
+
+        persistViewState(for: session)
+        session.unloadDocument()
+        clearPendingPasswordRequest(for: id)
+
+        if let index = tabs.firstIndex(where: { $0.id == id }) {
+            tabs[index].documentURL = nil
+            tabs[index].isSecurityScoped = false
+            tabs[index].title = "New Tab"
+        }
+    }
+
     func selectTab(_ tabID: UUID) {
         guard tabs.contains(where: { $0.id == tabID }),
               tabID != activeTabID else { return }

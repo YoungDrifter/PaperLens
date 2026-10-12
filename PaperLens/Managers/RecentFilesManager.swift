@@ -64,8 +64,6 @@ final class RecentFilesManager {
         saveRecentFiles()
     }
 
-    var welcomeFiles: [RecentFile] { Array(recentFiles.prefix(5)) }
-
     func clearRecentFiles() {
         recentFiles = []
         defaults.removeObject(forKey: recentFilesKey)
@@ -176,7 +174,8 @@ final class RecentFilesManager {
         saveRecentFiles()
     }
 
-    private func removeRecentFile(_ recentFile: RecentFile) {
+    /// Forget one entry; the rest of the history and its order stay untouched.
+    func removeRecentFile(_ recentFile: RecentFile) {
         recentFiles.removeAll { $0.id == recentFile.id }
         saveRecentFiles()
     }

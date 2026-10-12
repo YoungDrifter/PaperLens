@@ -9,8 +9,8 @@ struct PaperLensBrandingTests {
     @Test func publicIdentityUsesNewVersionAndBundledIcon() throws {
         #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String == "PaperLens")
         #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == AppIdentity.displayName)
-        #expect(AppIdentity.version == "1.0.2")
-        #expect(Bundle.main.bundleIdentifier == "com.raccoontechnologies.PaperLens")
+        #expect(AppIdentity.version == "1.0.3")
+        #expect(Bundle.main.bundleIdentifier == (ProcessInfo.processInfo.environment["PAPERLENS_EXPECTED_BUNDLE_ID"] ?? "com.raccoontechnologies.PaperLens"))
         let url = try #require(Bundle.main.url(forResource: "AppIcon", withExtension: "icns"))
         #expect(NSImage(contentsOf: url)?.isValid == true)
         #expect(AppIdentity.icon.isValid)
@@ -31,7 +31,7 @@ struct PaperLensBrandingTests {
         #expect(latest == "1.0.1 (Build 8)")
         #expect(current as String == "1.0.1 (Build 6)")
         #expect(formatter.formatBundleDisplayVersion?("1.0.1", withBundleVersion: "8", matchingUpdate: update) == "1.0.1 (Build 8)")
-        #expect(AppIdentity.versionLabel.contains("Build 16"))
+        #expect(AppIdentity.versionLabel.contains("Build 25"))
     }
 
     @Test func verifiedVersionCacheRestoresBuildAndMigratesVersionOnlyCache() throws {
@@ -104,23 +104,31 @@ struct WelcomeTests {
         defaults.set(try JSONEncoder().encode(files), forKey: "recentFiles")
         let manager = RecentFilesManager(defaults: defaults)
         #expect(manager.recentFiles.map(\.url.lastPathComponent) == ["3.pdf", "4.pdf", "1.pdf", "0.pdf", "2.pdf"])
-        #expect(manager.welcomeFiles == manager.recentFiles)
         manager.addRecentFile(files[0].url)
         #expect(manager.recentFiles.first?.url == files[0].url)
     }
 
-    @Test func welcomeShowsFiveNewestWithoutTruncatingFullHistory() throws {
+    @Test func welcomeListsEveryRecentFileAndDeletesOneEntry() throws {
         let suite = "WelcomeTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
         let manager = RecentFilesManager(defaults: defaults)
-        manager.recentFiles = (0..<8).map {
-            RecentFile(url: URL(fileURLWithPath: "/tmp/recent-\($0).pdf"), securityScopedBookmarkData: nil)
+        for index in 0..<8 {
+            let url = directory.appendingPathComponent("recent-\(index).pdf")
+            try Data().write(to: url)
+            manager.addRecentFile(url)
         }
-        #expect(manager.welcomeFiles.count == 5)
-        #expect(manager.welcomeFiles.map(\.id) == Array(manager.recentFiles.prefix(5)).map(\.id))
+        // The welcome card lists the whole history instead of the newest five.
         #expect(manager.recentFiles.count == 8)
+        let order = manager.recentFiles.map(\.id)
+        let removed = manager.recentFiles[3]
+        manager.removeRecentFile(removed)
+        #expect(manager.recentFiles.map(\.id) == order.filter { $0 != removed.id })
+        #expect(RecentFilesManager(defaults: defaults).recentFiles.count == 7)
         manager.clearRecentFiles()
-        #expect(manager.welcomeFiles.isEmpty)
+        #expect(manager.recentFiles.isEmpty)
     }
 }
