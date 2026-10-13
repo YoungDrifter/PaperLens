@@ -41,6 +41,8 @@ struct PreviewLayoutTests {
         manager.toggleTabBar()
         #expect(!manager.isTabBarVisible)
         manager.createNewTab()
+        #expect(manager.isTabBarVisible)
+        manager.setTabBarVisible(false)
         manager.selectTab(first)
         #expect(!manager.isTabBarVisible)
         manager.toggleTabBar()
@@ -57,6 +59,18 @@ struct PreviewLayoutTests {
         automatic.setTabBarVisible(false)
         automatic.toggleTabBar()
         #expect(automatic.isTabBarVisible)
+    }
+
+    @Test func movingTabIntoWindowRevealsHiddenTabBar() throws {
+        let source = TabManager()
+        let id = try #require(source.activeTabID)
+        let destination = TabManager()
+        destination.setTabBarVisible(false)
+        #expect(source.moveTab(id, to: destination, at: 1, closeIfEmpty: false))
+        #expect(destination.isTabBarVisible)
+        destination.setTabBarVisible(false)
+        destination.moveTab(fromIndex: 0, toIndex: 2)
+        #expect(!destination.isTabBarVisible)
     }
 
     @Test func documentSplitReservesReaderWidth() {

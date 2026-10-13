@@ -275,7 +275,7 @@ final class PDFManager {
             startedSecurityScopedAccess = false
         }
 
-        guard let pdfDocument = PDFDocument(url: url) else {
+        guard let pdfDocument = ReadingPDFDocument(url: url) else {
             if startedSecurityScopedAccess {
                 url.stopAccessingSecurityScopedResource()
             }

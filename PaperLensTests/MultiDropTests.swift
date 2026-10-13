@@ -55,7 +55,9 @@ struct MultiDropTests {
         defer { cleanup(urls) }
 
         let tabManager = TabManager()   // starts with one empty tab
+        tabManager.setTabBarVisible(false)
         let failed = tabManager.openDroppedDocuments(urls)
+        #expect(tabManager.isTabBarVisible)
 
         #expect(failed == 0)
         #expect(tabManager.tabs.count == 3)
@@ -73,11 +75,13 @@ struct MultiDropTests {
         defer { cleanup([url]) }
 
         let tabManager = TabManager()
+        tabManager.setTabBarVisible(false)
         #expect(tabManager.tabs.count == 1)   // initial empty tab
 
         tabManager.openDroppedDocuments([url])
 
         #expect(tabManager.tabs.count == 1)   // reused, not a second tab
+        #expect(!tabManager.isTabBarVisible)
         #expect(tabManager.tabs.first?.documentURL?.paperLensCanonicalDocumentURL
                 == url.paperLensCanonicalDocumentURL)
     }
@@ -101,7 +105,9 @@ struct MultiDropTests {
         defer { cleanup([good, bad]) }
 
         let tabManager = TabManager()
+        tabManager.setTabBarVisible(false)
         let failed = tabManager.openDroppedDocuments([good, bad])
+        #expect(!tabManager.isTabBarVisible)
 
         #expect(failed == 1)
         // Only the good file remains; the failed file left no empty "New Tab".

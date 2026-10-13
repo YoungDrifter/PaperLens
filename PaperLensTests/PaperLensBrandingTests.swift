@@ -9,7 +9,7 @@ struct PaperLensBrandingTests {
     @Test func publicIdentityUsesNewVersionAndBundledIcon() throws {
         #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleName") as? String == "PaperLens")
         #expect(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String == AppIdentity.displayName)
-        #expect(AppIdentity.version == "1.0.3")
+        #expect(AppIdentity.version == "1.0.4")
         #expect(Bundle.main.bundleIdentifier == (ProcessInfo.processInfo.environment["PAPERLENS_EXPECTED_BUNDLE_ID"] ?? "com.raccoontechnologies.PaperLens"))
         let url = try #require(Bundle.main.url(forResource: "AppIcon", withExtension: "icns"))
         #expect(NSImage(contentsOf: url)?.isValid == true)
@@ -31,7 +31,7 @@ struct PaperLensBrandingTests {
         #expect(latest == "1.0.1 (Build 8)")
         #expect(current as String == "1.0.1 (Build 6)")
         #expect(formatter.formatBundleDisplayVersion?("1.0.1", withBundleVersion: "8", matchingUpdate: update) == "1.0.1 (Build 8)")
-        #expect(AppIdentity.versionLabel.contains("Build 25"))
+        #expect(AppIdentity.versionLabel.contains("Build 28"))
     }
 
     @Test func verifiedVersionCacheRestoresBuildAndMigratesVersionOnlyCache() throws {

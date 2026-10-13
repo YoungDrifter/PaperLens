@@ -6,9 +6,9 @@
 
 一个简洁的原生 macOS PDF 阅读器，支持多标签阅读、高亮、评论和书签，让文档与阅读时的想法保持在一起。
 
-**Version 1.0.3** · macOS 15+ · Apple Silicon
+**Version 1.0.4** · macOS 15+ · Apple Silicon
 
-[下载 1.0.3](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.3)
+[下载 1.0.4](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.4)
 
 ![PaperLens 01 · 启动页](docs/versions/1.0.0/images/welcome.png)
 
@@ -32,7 +32,7 @@
 
 ## 安装
 
-从 [Releases](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.3) 下载 `PaperLens-1.0.3.dmg`，打开后将 **PaperLens.app** 拖入 **Applications**。`SHA256SUMS.txt` 提供安装包校验值。
+从 [Releases](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.4) 下载 `PaperLens-1.0.4.dmg`，打开后将 **PaperLens.app** 拖入 **Applications**。`SHA256SUMS.txt` 提供安装包校验值。
 
 当前版本使用 ad-hoc 签名，尚未经过 Apple 公证。
 
@@ -61,6 +61,12 @@
 统一按钮、图标与弹出界面，优化标签栏、侧栏、搜索、启动页和设置的视觉层次；修复连续点击顶栏按钮（含按钮边缘与控件组内边距）时误触发窗口放大的问题，控件之间的空白顶栏仍保留系统双击行为。自定义浮层使用浅色表面与细描边，不显示阴影。启动页的历史记录显示全部条目并在卡片内滚动，每条记录可单独删除，也可一次清空；顶栏新增启动页按钮，关闭当前文档即可回到启动页，标签页保留。所有弹层统一为系统样式，历史记录与文件名弹层与 QuillTeX 一致；标签页改为胶囊样式。
 
 [更新说明](docs/versions/1.0.3/README.md) · [下载 1.0.3](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.3)
+
+### 1.0.4 · 手写笔迹与标签栏修复
+
+修复 ONYX 导出的手写 PDF 在阅读时笔迹模糊、细线断续的问题，改善放大后的显示与缩略图清晰度，兼容页面旋转与裁切；新建标签页时自动显示标签栏。
+
+[更新说明](docs/versions/1.0.4/README.md) · [下载 1.0.4](https://github.com/YoungDrifter/PaperLens/releases/tag/v1.0.4)
 
 ## 本地构建
 

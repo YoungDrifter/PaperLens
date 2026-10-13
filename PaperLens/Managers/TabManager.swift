@@ -54,12 +54,18 @@ final class TabManager {
 
     var isToolbarExpanded = true
 
-    /// Nil follows the tab count; a manual choice lasts for this window only.
+    /// Nil follows the tab count; adding a tab clears a manual hidden choice.
     private var tabBarVisibilityOverride: Bool?
     var isTabBarVisible: Bool { tabBarVisibilityOverride ?? (tabs.count > 1) }
 
     func setTabBarVisible(_ visible: Bool) {
         tabBarVisibilityOverride = visible
+    }
+
+    private func revealTabBarForAddedTab() {
+        if tabBarVisibilityOverride == false {
+            tabBarVisibilityOverride = nil
+        }
     }
 
     func toggleTabBar() {
@@ -368,6 +374,9 @@ final class TabManager {
                 closeTabOnFailure: true
             )
         }
+        if tabs.contains(where: { $0.id == newTab.id }) {
+            revealTabBarForAddedTab()
+        }
     }
 
     func closeTab(_ tabID: UUID) {
@@ -587,7 +596,9 @@ final class TabManager {
         createSession(for: newTab)
         activeTabID = newTab.id
         let result = sessions[newTab.id]?.pdfManager.loadDocument(from: url, isSecurityScoped: false) ?? .failed
-        return finishDroppedLoad(result, for: newTab.id, url: url, createdTab: true, restoreOnFailure: previousActiveTabID)
+        let loaded = finishDroppedLoad(result, for: newTab.id, url: url, createdTab: true, restoreOnFailure: previousActiveTabID)
+        if loaded { revealTabBarForAddedTab() }
+        return loaded
     }
 
     /// Applies a dropped file's load result. On `.failed`, removes a tab we created
@@ -974,6 +985,7 @@ final class TabManager {
                 : session.pdfManager.documentTitle
         }
         tabs.insert(attachedTab, at: clampedIndex)
+        revealTabBarForAddedTab()
         sessions[session.id] = session
 
         // If the moved tab is still awaiting a password, queue it for this
